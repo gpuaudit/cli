@@ -7,8 +7,9 @@
 .vscode/
 *.swp
 
-# Claude
+# Private project docs
 CLAUDE.md
+ARCHITECTURE.md
 
 # OS
 .DS_Store
