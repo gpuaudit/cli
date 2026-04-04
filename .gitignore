@@ -1,6 +1,8 @@
 # Binaries
 *.exe
 /gpuaudit
+gpuaudit-*
+deploy.sh
 
 # IDE
 .idea/
