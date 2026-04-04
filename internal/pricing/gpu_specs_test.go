@@ -53,15 +53,6 @@ func TestSmallerAlternatives(t *testing.T) {
 		t.Fatal("expected alternatives for p5.48xlarge")
 	}
 
-	// Should be sorted by price ascending
-	for i := 1; i < len(alts); i++ {
-		if alts[i].OnDemandHourly < alts[i-1].OnDemandHourly {
-			t.Errorf("alternatives not sorted: %s ($%.2f) before %s ($%.2f)",
-				alts[i-1].InstanceType, alts[i-1].OnDemandHourly,
-				alts[i].InstanceType, alts[i].OnDemandHourly)
-		}
-	}
-
 	// All alternatives should be single-GPU and cheaper
 	for _, alt := range alts {
 		if alt.GPUCount != 1 {
@@ -71,6 +62,24 @@ func TestSmallerAlternatives(t *testing.T) {
 			t.Errorf("alternative %s ($%.2f) is not cheaper than %s ($%.2f)",
 				alt.InstanceType, alt.OnDemandHourly, spec.InstanceType, spec.OnDemandHourly)
 		}
+	}
+}
+
+func TestSmallerAlternatives_PrefersSameFamily(t *testing.T) {
+	// g6e.12xlarge has 4× L40S — alternatives should start with g6e single-GPU instances
+	spec := LookupEC2("g6e.12xlarge")
+	if spec == nil {
+		t.Fatal("expected spec for g6e.12xlarge")
+	}
+
+	alts := SmallerAlternatives(*spec)
+	if len(alts) == 0 {
+		t.Fatal("expected alternatives")
+	}
+
+	// First alternative should be same family (g6e)
+	if alts[0].Family != "g6e" {
+		t.Errorf("expected first alternative to be g6e family, got %s (%s)", alts[0].Family, alts[0].InstanceType)
 	}
 }
 

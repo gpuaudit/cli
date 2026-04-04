@@ -122,22 +122,42 @@ func GPUFamilies() []string {
 	return []string{"p3", "p4d", "p4de", "p5", "g4dn", "g5", "g6", "g6e", "inf2", "trn1"}
 }
 
-// SmallerAlternatives returns cheaper GPU instance types that might handle the workload.
-// It finds single-GPU instances from cheaper families, ordered by price ascending.
+// SmallerAlternatives returns cheaper single-GPU instance types that could
+// handle the workload, ordered by relevance. Same-family alternatives come
+// first (e.g. g6e.xlarge for a g6e.12xlarge), then same-GPU-model from other
+// families, then other GPUs. Within each tier, sorted by price ascending.
 func SmallerAlternatives(current GPUSpec) []GPUSpec {
-	var alts []GPUSpec
+	var sameFamily, sameGPU, other []GPUSpec
 	for _, spec := range awsGPUSpecs {
-		if spec.GPUCount == 1 && spec.OnDemandHourly < current.OnDemandHourly {
-			alts = append(alts, spec)
+		if spec.GPUCount != 1 || spec.OnDemandHourly >= current.OnDemandHourly {
+			continue
+		}
+		switch {
+		case spec.Family == current.Family:
+			sameFamily = append(sameFamily, spec)
+		case spec.GPUModel == current.GPUModel:
+			sameGPU = append(sameGPU, spec)
+		default:
+			other = append(other, spec)
 		}
 	}
-	// Sort by price ascending
-	for i := 0; i < len(alts); i++ {
-		for j := i + 1; j < len(alts); j++ {
-			if alts[j].OnDemandHourly < alts[i].OnDemandHourly {
-				alts[i], alts[j] = alts[j], alts[i]
+
+	sortByPrice := func(s []GPUSpec) {
+		for i := 0; i < len(s); i++ {
+			for j := i + 1; j < len(s); j++ {
+				if s[j].OnDemandHourly < s[i].OnDemandHourly {
+					s[i], s[j] = s[j], s[i]
+				}
 			}
 		}
 	}
+	sortByPrice(sameFamily)
+	sortByPrice(sameGPU)
+	sortByPrice(other)
+
+	alts := make([]GPUSpec, 0, len(sameFamily)+len(sameGPU)+len(other))
+	alts = append(alts, sameFamily...)
+	alts = append(alts, sameGPU...)
+	alts = append(alts, other...)
 	return alts
 }
