@@ -56,14 +56,14 @@ func FormatTable(w io.Writer, result *models.ScanResult) {
 
 func printInstanceTable(w io.Writer, instances []models.GPUInstance) {
 	// Header
-	fmt.Fprintf(w, "  %-28s %-22s %10s  %-14s  %s\n",
+	fmt.Fprintf(w, "  %-36s %-26s %10s  %-16s  %s\n",
 		"Instance", "Type", "Monthly", "Signal", "Recommendation")
 	fmt.Fprintf(w, "  %s %s %s  %s  %s\n",
-		strings.Repeat("─", 28),
-		strings.Repeat("─", 22),
+		strings.Repeat("─", 36),
+		strings.Repeat("─", 26),
 		strings.Repeat("─", 10),
-		strings.Repeat("─", 14),
-		strings.Repeat("─", 40),
+		strings.Repeat("─", 16),
+		strings.Repeat("─", 50),
 	)
 
 	for _, inst := range instances {
@@ -71,14 +71,14 @@ func printInstanceTable(w io.Writer, instances []models.GPUInstance) {
 		if name == "" {
 			name = inst.InstanceID
 		}
-		if len(name) > 26 {
-			name = name[:23] + "..."
+		if len(name) > 34 {
+			name = name[:31] + "..."
 		}
 
 		gpuDesc := fmt.Sprintf("%d× %s", inst.GPUCount, inst.GPUModel)
 		typeDesc := fmt.Sprintf("%s (%s)", inst.InstanceType, gpuDesc)
-		if len(typeDesc) > 22 {
-			typeDesc = typeDesc[:19] + "..."
+		if len(typeDesc) > 26 {
+			typeDesc = typeDesc[:23] + "..."
 		}
 
 		signal := ""
@@ -90,11 +90,11 @@ func printInstanceTable(w io.Writer, instances []models.GPUInstance) {
 		if len(inst.Recommendations) > 0 {
 			rec = inst.Recommendations[0].Description
 		}
-		if len(rec) > 55 {
-			rec = rec[:52] + "..."
+		if len(rec) > 70 {
+			rec = rec[:67] + "..."
 		}
 
-		fmt.Fprintf(w, "  %-28s %-22s $%9.0f  %-14s  %s\n",
+		fmt.Fprintf(w, "  %-36s %-26s $%9.0f  %-16s  %s\n",
 			name, typeDesc, inst.MonthlyCost, signal, rec)
 	}
 	fmt.Fprintln(w)
