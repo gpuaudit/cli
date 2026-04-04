@@ -27,6 +27,7 @@ type ScanOptions struct {
 	SkipMetrics   bool
 	SkipSageMaker bool
 	SkipCosts     bool
+	ExcludeTags   map[string]string
 }
 
 // DefaultScanOptions returns sensible defaults.
@@ -105,6 +106,23 @@ func Scan(ctx context.Context, opts ScanOptions) (*models.ScanResult, error) {
 		if len(res.instances) > 0 {
 			allInstances = append(allInstances, res.instances...)
 			scannedRegions = append(scannedRegions, res.region)
+		}
+	}
+
+	// Filter by excluded tags
+	if len(opts.ExcludeTags) > 0 {
+		filtered := allInstances[:0]
+		excluded := 0
+		for _, inst := range allInstances {
+			if matchesExcludeTags(inst.Tags, opts.ExcludeTags) {
+				excluded++
+				continue
+			}
+			filtered = append(filtered, inst)
+		}
+		allInstances = filtered
+		if excluded > 0 {
+			fmt.Fprintf(os.Stderr, "  Excluded %d instance(s) by tag filter.\n", excluded)
 		}
 	}
 
@@ -221,4 +239,13 @@ func buildSummary(instances []models.GPUInstance) models.ScanSummary {
 	}
 
 	return s
+}
+
+func matchesExcludeTags(instanceTags map[string]string, excludes map[string]string) bool {
+	for k, v := range excludes {
+		if instanceTags[k] == v {
+			return true
+		}
+	}
+	return false
 }
