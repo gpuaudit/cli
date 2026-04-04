@@ -38,6 +38,7 @@ var (
 	scanSkipMetrics   bool
 	scanSkipSageMaker bool
 	scanSkipCosts     bool
+	scanExcludeTags   []string
 )
 
 var scanCmd = &cobra.Command{
@@ -54,6 +55,7 @@ func init() {
 	scanCmd.Flags().BoolVar(&scanSkipMetrics, "skip-metrics", false, "Skip CloudWatch metrics collection (faster but less accurate)")
 	scanCmd.Flags().BoolVar(&scanSkipSageMaker, "skip-sagemaker", false, "Skip SageMaker endpoint scanning")
 	scanCmd.Flags().BoolVar(&scanSkipCosts, "skip-costs", false, "Skip Cost Explorer data enrichment")
+	scanCmd.Flags().StringSliceVar(&scanExcludeTags, "exclude-tag", nil, "Exclude instances matching tag (key=value, repeatable)")
 
 	rootCmd.AddCommand(scanCmd)
 	rootCmd.AddCommand(pricingCmd)
@@ -70,6 +72,7 @@ func runScan(cmd *cobra.Command, args []string) error {
 	opts.SkipMetrics = scanSkipMetrics
 	opts.SkipSageMaker = scanSkipSageMaker
 	opts.SkipCosts = scanSkipCosts
+	opts.ExcludeTags = parseExcludeTags(scanExcludeTags)
 
 	result, err := awsprovider.Scan(ctx, opts)
 	if err != nil {
@@ -236,4 +239,14 @@ var versionCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Printf("gpuaudit %s\n", version)
 	},
+}
+
+func parseExcludeTags(raw []string) map[string]string {
+	tags := make(map[string]string, len(raw))
+	for _, s := range raw {
+		if k, v, ok := strings.Cut(s, "="); ok {
+			tags[k] = v
+		}
+	}
+	return tags
 }
