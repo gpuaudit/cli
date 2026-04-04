@@ -3,6 +3,7 @@ package aws
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -39,7 +40,7 @@ func EnrichEC2Metrics(ctx context.Context, client CloudWatchClient, instances []
 
 		metrics, err := getEC2Metrics(ctx, client, inst.InstanceID, window)
 		if err != nil {
-			fmt.Printf("  warning: metrics unavailable for %s: %v\n", inst.InstanceID, err)
+			fmt.Fprintf(os.Stderr,"  warning: metrics unavailable for %s: %v\n", inst.InstanceID, err)
 			continue
 		}
 
@@ -63,7 +64,7 @@ func EnrichSageMakerMetrics(ctx context.Context, client CloudWatchClient, instan
 
 		metrics, err := getSageMakerMetrics(ctx, client, inst.Name, window)
 		if err != nil {
-			fmt.Printf("  warning: metrics unavailable for SageMaker endpoint %s: %v\n", inst.Name, err)
+			fmt.Fprintf(os.Stderr,"  warning: metrics unavailable for SageMaker endpoint %s: %v\n", inst.Name, err)
 			continue
 		}
 

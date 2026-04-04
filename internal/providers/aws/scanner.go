@@ -3,6 +3,7 @@ package aws
 import (
 	"context"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -67,7 +68,7 @@ func Scan(ctx context.Context, opts ScanOptions) (*models.ScanResult, error) {
 		}
 	}
 
-	fmt.Printf("  Scanning %d regions for GPU instances...\n", len(regions))
+	fmt.Fprintf(os.Stderr,"  Scanning %d regions for GPU instances...\n", len(regions))
 
 	// Scan all regions concurrently
 	type regionResult struct {
@@ -98,7 +99,7 @@ func Scan(ctx context.Context, opts ScanOptions) (*models.ScanResult, error) {
 
 	for res := range results {
 		if res.err != nil {
-			fmt.Printf("  warning: error scanning %s: %v\n", res.region, res.err)
+			fmt.Fprintf(os.Stderr,"  warning: error scanning %s: %v\n", res.region, res.err)
 			continue
 		}
 		if len(res.instances) > 0 {
@@ -111,7 +112,7 @@ func Scan(ctx context.Context, opts ScanOptions) (*models.ScanResult, error) {
 	if !opts.SkipCosts && len(allInstances) > 0 {
 		ceClient := costexplorer.NewFromConfig(cfg)
 		if err := EnrichCostData(ctx, ceClient, allInstances); err != nil {
-			fmt.Printf("  warning: could not enrich cost data: %v\n", err)
+			fmt.Fprintf(os.Stderr,"  warning: could not enrich cost data: %v\n", err)
 		}
 	}
 
@@ -149,7 +150,7 @@ func scanRegion(ctx context.Context, cfg aws.Config, accountID, region string, o
 	// Enrich with CloudWatch metrics
 	if !opts.SkipMetrics && len(ec2Instances) > 0 {
 		if err := EnrichEC2Metrics(ctx, cwClient, ec2Instances, opts.MetricWindow); err != nil {
-			fmt.Printf("  warning: could not enrich EC2 metrics in %s: %v\n", region, err)
+			fmt.Fprintf(os.Stderr,"  warning: could not enrich EC2 metrics in %s: %v\n", region, err)
 		}
 	}
 
@@ -160,11 +161,11 @@ func scanRegion(ctx context.Context, cfg aws.Config, accountID, region string, o
 		smClient := sagemaker.NewFromConfig(regionalCfg)
 		smInstances, err := DiscoverSageMakerEndpoints(ctx, smClient, accountID, region)
 		if err != nil {
-			fmt.Printf("  warning: could not scan SageMaker in %s: %v\n", region, err)
+			fmt.Fprintf(os.Stderr,"  warning: could not scan SageMaker in %s: %v\n", region, err)
 		} else {
 			if !opts.SkipMetrics && len(smInstances) > 0 {
 				if err := EnrichSageMakerMetrics(ctx, cwClient, smInstances, opts.MetricWindow); err != nil {
-					fmt.Printf("  warning: could not enrich SageMaker metrics in %s: %v\n", region, err)
+					fmt.Fprintf(os.Stderr,"  warning: could not enrich SageMaker metrics in %s: %v\n", region, err)
 				}
 			}
 			allInstances = append(allInstances, smInstances...)
