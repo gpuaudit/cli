@@ -1,0 +1,213 @@
+package aws
+
+import (
+	"context"
+	"fmt"
+	"sync"
+	"time"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/service/sagemaker"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
+
+	"github.com/maksimov/gpuaudit/internal/analysis"
+	"github.com/maksimov/gpuaudit/internal/models"
+)
+
+// ScanOptions controls what gets scanned.
+type ScanOptions struct {
+	Profile       string
+	Regions       []string
+	MetricWindow  MetricWindow
+	SkipMetrics   bool
+	SkipSageMaker bool
+}
+
+// DefaultScanOptions returns sensible defaults.
+func DefaultScanOptions() ScanOptions {
+	return ScanOptions{
+		MetricWindow: DefaultMetricWindow,
+	}
+}
+
+// Scan performs a full GPU audit of the AWS account.
+func Scan(ctx context.Context, opts ScanOptions) (*models.ScanResult, error) {
+	start := time.Now()
+
+	// Load AWS config
+	cfgOpts := []func(*awsconfig.LoadOptions) error{}
+	if opts.Profile != "" {
+		cfgOpts = append(cfgOpts, awsconfig.WithSharedConfigProfile(opts.Profile))
+	}
+
+	cfg, err := awsconfig.LoadDefaultConfig(ctx, cfgOpts...)
+	if err != nil {
+		return nil, fmt.Errorf("loading AWS config: %w", err)
+	}
+
+	// Get account ID
+	stsClient := sts.NewFromConfig(cfg)
+	identity, err := stsClient.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
+	if err != nil {
+		return nil, fmt.Errorf("getting caller identity: %w", err)
+	}
+	accountID := aws.ToString(identity.Account)
+
+	// Determine regions to scan
+	regions := opts.Regions
+	if len(regions) == 0 {
+		regions, err = getGPURegions(ctx, cfg)
+		if err != nil {
+			return nil, fmt.Errorf("listing regions: %w", err)
+		}
+	}
+
+	fmt.Printf("  Scanning %d regions for GPU instances...\n", len(regions))
+
+	// Scan all regions concurrently
+	type regionResult struct {
+		region    string
+		instances []models.GPUInstance
+		err       error
+	}
+
+	results := make(chan regionResult, len(regions))
+	var wg sync.WaitGroup
+
+	for _, region := range regions {
+		wg.Add(1)
+		go func(r string) {
+			defer wg.Done()
+			instances, err := scanRegion(ctx, cfg, accountID, r, opts)
+			results <- regionResult{region: r, instances: instances, err: err}
+		}(region)
+	}
+
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	var allInstances []models.GPUInstance
+	var scannedRegions []string
+
+	for res := range results {
+		if res.err != nil {
+			fmt.Printf("  warning: error scanning %s: %v\n", res.region, res.err)
+			continue
+		}
+		if len(res.instances) > 0 {
+			allInstances = append(allInstances, res.instances...)
+			scannedRegions = append(scannedRegions, res.region)
+		}
+	}
+
+	// Run analysis
+	analysis.AnalyzeAll(allInstances)
+
+	// Build summary
+	summary := buildSummary(allInstances)
+
+	return &models.ScanResult{
+		Timestamp:    start,
+		AccountID:    accountID,
+		Regions:      scannedRegions,
+		ScanDuration: time.Since(start).Round(time.Millisecond).String(),
+		Instances:    allInstances,
+		Summary:      summary,
+	}, nil
+}
+
+func scanRegion(ctx context.Context, cfg aws.Config, accountID, region string, opts ScanOptions) ([]models.GPUInstance, error) {
+	regionalCfg := cfg.Copy()
+	regionalCfg.Region = region
+
+	ec2Client := ec2.NewFromConfig(regionalCfg)
+	cwClient := cloudwatch.NewFromConfig(regionalCfg)
+
+	var allInstances []models.GPUInstance
+
+	// Discover EC2 GPU instances
+	ec2Instances, err := DiscoverEC2GPUInstances(ctx, ec2Client, accountID, region)
+	if err != nil {
+		return nil, err
+	}
+
+	// Enrich with CloudWatch metrics
+	if !opts.SkipMetrics && len(ec2Instances) > 0 {
+		if err := EnrichEC2Metrics(ctx, cwClient, ec2Instances, opts.MetricWindow); err != nil {
+			fmt.Printf("  warning: could not enrich EC2 metrics in %s: %v\n", region, err)
+		}
+	}
+
+	allInstances = append(allInstances, ec2Instances...)
+
+	// Discover SageMaker endpoints
+	if !opts.SkipSageMaker {
+		smClient := sagemaker.NewFromConfig(regionalCfg)
+		smInstances, err := DiscoverSageMakerEndpoints(ctx, smClient, accountID, region)
+		if err != nil {
+			fmt.Printf("  warning: could not scan SageMaker in %s: %v\n", region, err)
+		} else {
+			if !opts.SkipMetrics && len(smInstances) > 0 {
+				if err := EnrichSageMakerMetrics(ctx, cwClient, smInstances, opts.MetricWindow); err != nil {
+					fmt.Printf("  warning: could not enrich SageMaker metrics in %s: %v\n", region, err)
+				}
+			}
+			allInstances = append(allInstances, smInstances...)
+		}
+	}
+
+	return allInstances, nil
+}
+
+func getGPURegions(ctx context.Context, cfg aws.Config) ([]string, error) {
+	// Scan the most common regions where GPUs are available
+	return []string{
+		"us-east-1", "us-east-2", "us-west-1", "us-west-2",
+		"eu-west-1", "eu-west-2", "eu-central-1",
+		"ap-southeast-1", "ap-northeast-1",
+	}, nil
+}
+
+func buildSummary(instances []models.GPUInstance) models.ScanSummary {
+	s := models.ScanSummary{
+		TotalInstances: len(instances),
+	}
+
+	for _, inst := range instances {
+		s.TotalMonthlyCost += inst.MonthlyCost
+		s.TotalEstimatedWaste += inst.EstimatedSavings
+
+		maxSeverity := models.Severity("")
+		for _, sig := range inst.WasteSignals {
+			if sig.Severity == models.SeverityCritical {
+				maxSeverity = models.SeverityCritical
+			} else if sig.Severity == models.SeverityWarning && maxSeverity != models.SeverityCritical {
+				maxSeverity = models.SeverityWarning
+			} else if sig.Severity == models.SeverityInfo && maxSeverity == "" {
+				maxSeverity = models.SeverityInfo
+			}
+		}
+
+		switch maxSeverity {
+		case models.SeverityCritical:
+			s.CriticalCount++
+		case models.SeverityWarning:
+			s.WarningCount++
+		case models.SeverityInfo:
+			s.InfoCount++
+		default:
+			s.HealthyCount++
+		}
+	}
+
+	if s.TotalMonthlyCost > 0 {
+		s.WastePercent = (s.TotalEstimatedWaste / s.TotalMonthlyCost) * 100
+	}
+
+	return s
+}

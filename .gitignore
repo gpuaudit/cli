@@ -1,0 +1,16 @@
+# Binaries
+*.exe
+gpuaudit
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build
+dist/
+
