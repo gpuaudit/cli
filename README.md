@@ -116,7 +116,6 @@ gpuaudit/
 │   ├── analysis/          Waste detection rules engine
 │   ├── output/            Formatters (table, JSON, markdown, Slack)
 │   └── providers/aws/     EC2, SageMaker, CloudWatch, scanner orchestrator
-├── ARCHITECTURE.md        Detailed technical design
 └── LICENSE                Apache 2.0
 ```
 
