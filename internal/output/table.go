@@ -27,8 +27,8 @@ func FormatTable(w io.Writer, result *models.ScanResult) {
 	fmt.Fprintf(w, "  │  GPU Fleet Summary                                       │\n")
 	fmt.Fprintf(w, "  ├──────────────────────────────────────────────────────────┤\n")
 	fmt.Fprintf(w, "  │  Total GPU instances:      %-6d                        │\n", s.TotalInstances)
-	fmt.Fprintf(w, "  │  Total monthly GPU spend:  $%-,10.0f                   │\n", s.TotalMonthlyCost)
-	fmt.Fprintf(w, "  │  Estimated monthly waste:  $%-,10.0f (%4.0f%%)           │\n", s.TotalEstimatedWaste, s.WastePercent)
+	fmt.Fprintf(w, "  │  Total monthly GPU spend:  $%-10.0f                   │\n", s.TotalMonthlyCost)
+	fmt.Fprintf(w, "  │  Estimated monthly waste:  $%-10.0f (%4.0f%%)           │\n", s.TotalEstimatedWaste, s.WastePercent)
 	fmt.Fprintf(w, "  └──────────────────────────────────────────────────────────┘\n\n")
 
 	if s.TotalInstances == 0 {
