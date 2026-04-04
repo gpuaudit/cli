@@ -90,12 +90,32 @@ func printInstanceTable(w io.Writer, instances []models.GPUInstance) {
 		if len(inst.Recommendations) > 0 {
 			rec = inst.Recommendations[0].Description
 		}
+
+		// Print first line
+		recFirst, recRest := rec, ""
 		if len(rec) > 70 {
-			rec = rec[:67] + "..."
+			// Wrap at last space before column 70
+			cut := 70
+			for cut > 0 && rec[cut] != ' ' {
+				cut--
+			}
+			if cut == 0 {
+				cut = 70
+			}
+			recFirst = rec[:cut]
+			recRest = rec[cut:]
+			if len(recRest) > 0 && recRest[0] == ' ' {
+				recRest = recRest[1:]
+			}
 		}
 
 		fmt.Fprintf(w, "  %-36s %-26s $%9.0f  %-16s  %s\n",
-			name, typeDesc, inst.MonthlyCost, signal, rec)
+			name, typeDesc, inst.MonthlyCost, signal, recFirst)
+		if recRest != "" {
+			// Indent continuation to align with recommendation column
+			pad := 36 + 1 + 26 + 1 + 10 + 2 + 16 + 2
+			fmt.Fprintf(w, "  %s%s\n", strings.Repeat(" ", pad), recRest)
+		}
 	}
 	fmt.Fprintln(w)
 }
