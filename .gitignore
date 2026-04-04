@@ -1,11 +1,14 @@
 # Binaries
 *.exe
-gpuaudit
+/gpuaudit
 
 # IDE
 .idea/
 .vscode/
 *.swp
+
+# Claude
+CLAUDE.md
 
 # OS
 .DS_Store

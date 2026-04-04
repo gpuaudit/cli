@@ -9,6 +9,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
+	"github.com/aws/aws-sdk-go-v2/service/costexplorer"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/sagemaker"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
@@ -24,6 +25,7 @@ type ScanOptions struct {
 	MetricWindow  MetricWindow
 	SkipMetrics   bool
 	SkipSageMaker bool
+	SkipCosts     bool
 }
 
 // DefaultScanOptions returns sensible defaults.
@@ -102,6 +104,14 @@ func Scan(ctx context.Context, opts ScanOptions) (*models.ScanResult, error) {
 		if len(res.instances) > 0 {
 			allInstances = append(allInstances, res.instances...)
 			scannedRegions = append(scannedRegions, res.region)
+		}
+	}
+
+	// Enrich with Cost Explorer data (account-level, not per-region)
+	if !opts.SkipCosts && len(allInstances) > 0 {
+		ceClient := costexplorer.NewFromConfig(cfg)
+		if err := EnrichCostData(ctx, ceClient, allInstances); err != nil {
+			fmt.Printf("  warning: could not enrich cost data: %v\n", err)
 		}
 	}
 
