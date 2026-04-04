@@ -138,16 +138,35 @@ func Scan(ctx context.Context, opts ScanOptions) (*models.ScanResult, error) {
 	// Run analysis
 	analysis.AnalyzeAll(allInstances)
 
-	// Filter out idle instances below the minimum idle days threshold
+	// Filter out idle signals below the minimum idle days threshold
 	if opts.MinIdleDays > 0 {
 		minHours := float64(opts.MinIdleDays) * 24
 		for i := range allInstances {
 			inst := &allInstances[i]
-			hasIdleOnly := len(inst.WasteSignals) == 1 && inst.WasteSignals[0].Type == "idle"
-			if hasIdleOnly && inst.UptimeHours < minHours {
-				inst.WasteSignals = nil
-				inst.Recommendations = nil
-				inst.EstimatedSavings = 0
+			if inst.UptimeHours >= minHours {
+				continue
+			}
+			// Remove idle signals and their terminate recommendations
+			var signals []models.WasteSignal
+			for _, s := range inst.WasteSignals {
+				if s.Type != "idle" {
+					signals = append(signals, s)
+				}
+			}
+			var recs []models.Recommendation
+			for _, r := range inst.Recommendations {
+				if r.Action != models.ActionTerminate {
+					recs = append(recs, r)
+				}
+			}
+			inst.WasteSignals = signals
+			inst.Recommendations = recs
+			// Recompute savings from remaining recommendations
+			inst.EstimatedSavings = 0
+			for _, r := range recs {
+				if r.MonthlySavings > inst.EstimatedSavings {
+					inst.EstimatedSavings = r.MonthlySavings
+				}
 			}
 		}
 	}
