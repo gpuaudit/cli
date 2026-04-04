@@ -28,6 +28,7 @@ type ScanOptions struct {
 	SkipSageMaker bool
 	SkipCosts     bool
 	ExcludeTags   map[string]string
+	MinIdleDays   int
 }
 
 // DefaultScanOptions returns sensible defaults.
@@ -136,6 +137,20 @@ func Scan(ctx context.Context, opts ScanOptions) (*models.ScanResult, error) {
 
 	// Run analysis
 	analysis.AnalyzeAll(allInstances)
+
+	// Filter out idle instances below the minimum idle days threshold
+	if opts.MinIdleDays > 0 {
+		minHours := float64(opts.MinIdleDays) * 24
+		for i := range allInstances {
+			inst := &allInstances[i]
+			hasIdleOnly := len(inst.WasteSignals) == 1 && inst.WasteSignals[0].Type == "idle"
+			if hasIdleOnly && inst.UptimeHours < minHours {
+				inst.WasteSignals = nil
+				inst.Recommendations = nil
+				inst.EstimatedSavings = 0
+			}
+		}
+	}
 
 	// Build summary
 	summary := buildSummary(allInstances)
