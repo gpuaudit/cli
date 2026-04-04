@@ -39,7 +39,7 @@ var (
 	scanSkipSageMaker bool
 	scanSkipCosts     bool
 	scanExcludeTags   []string
-	scanMinIdleDays   int
+	scanMinUptimeDays int
 )
 
 var scanCmd = &cobra.Command{
@@ -57,7 +57,7 @@ func init() {
 	scanCmd.Flags().BoolVar(&scanSkipSageMaker, "skip-sagemaker", false, "Skip SageMaker endpoint scanning")
 	scanCmd.Flags().BoolVar(&scanSkipCosts, "skip-costs", false, "Skip Cost Explorer data enrichment")
 	scanCmd.Flags().StringSliceVar(&scanExcludeTags, "exclude-tag", nil, "Exclude instances matching tag (key=value, repeatable)")
-	scanCmd.Flags().IntVar(&scanMinIdleDays, "min-idle-days", 0, "Only report idle instances that have been idle for at least this many days")
+	scanCmd.Flags().IntVar(&scanMinUptimeDays, "min-uptime-days", 0, "Only flag instances running for at least this many days")
 
 	rootCmd.AddCommand(scanCmd)
 	rootCmd.AddCommand(pricingCmd)
@@ -75,7 +75,7 @@ func runScan(cmd *cobra.Command, args []string) error {
 	opts.SkipSageMaker = scanSkipSageMaker
 	opts.SkipCosts = scanSkipCosts
 	opts.ExcludeTags = parseExcludeTags(scanExcludeTags)
-	opts.MinIdleDays = scanMinIdleDays
+	opts.MinUptimeDays = scanMinUptimeDays
 
 	result, err := awsprovider.Scan(ctx, opts)
 	if err != nil {
