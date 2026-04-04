@@ -3,6 +3,7 @@ package aws
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -39,7 +40,7 @@ func DiscoverSageMakerEndpoints(ctx context.Context, client SageMakerClient, acc
 			gpuInstances, err := describeEndpointGPUs(ctx, client, ep, accountID, region)
 			if err != nil {
 				// Log but don't fail the entire scan for one endpoint
-				fmt.Printf("  warning: could not describe endpoint %s: %v\n", aws.ToString(ep.EndpointName), err)
+				fmt.Fprintf(os.Stderr,"  warning: could not describe endpoint %s: %v\n", aws.ToString(ep.EndpointName), err)
 				continue
 			}
 			instances = append(instances, gpuInstances...)
