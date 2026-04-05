@@ -1,4 +1,4 @@
-module github.com/gpuaudit/gpuaudit
+module github.com/gpuaudit/cli
 
 go 1.24.0
 

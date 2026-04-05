@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gpuaudit/gpuaudit/internal/models"
+	"github.com/gpuaudit/cli/internal/models"
 )
 
 func ptr[T any](v T) *T { return &v }
