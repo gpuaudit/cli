@@ -29,13 +29,13 @@ $ gpuaudit scan --profile ml-prod
 ## Install
 
 ```bash
-go install github.com/maksimov/gpuaudit/cmd/gpuaudit@latest
+go install github.com/gpuaudit/gpuaudit/cmd/gpuaudit@latest
 ```
 
 Or build from source:
 
 ```bash
-git clone https://github.com/maksimov/gpuaudit.git
+git clone https://github.com/gpuaudit/gpuaudit.git
 cd gpuaudit
 go build -o gpuaudit ./cmd/gpuaudit
 ```
