@@ -8,7 +8,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/maksimov/gpuaudit/internal/models"
+	"github.com/gpuaudit/gpuaudit/internal/models"
 )
 
 // FormatMarkdown writes the scan result as a Markdown report.

@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/maksimov/gpuaudit/internal/models"
-	"github.com/maksimov/gpuaudit/internal/pricing"
+	"github.com/gpuaudit/gpuaudit/internal/models"
+	"github.com/gpuaudit/gpuaudit/internal/pricing"
 )
 
 // AnalyzeAll runs all waste detection rules against a set of GPU instances.

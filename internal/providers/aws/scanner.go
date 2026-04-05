@@ -18,8 +18,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sagemaker"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 
-	"github.com/maksimov/gpuaudit/internal/analysis"
-	"github.com/maksimov/gpuaudit/internal/models"
+	"github.com/gpuaudit/gpuaudit/internal/analysis"
+	"github.com/gpuaudit/gpuaudit/internal/models"
 )
 
 // ScanOptions controls what gets scanned.

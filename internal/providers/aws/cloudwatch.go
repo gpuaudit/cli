@@ -13,7 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	cwtypes "github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
 
-	"github.com/maksimov/gpuaudit/internal/models"
+	"github.com/gpuaudit/gpuaudit/internal/models"
 )
 
 // CloudWatchClient is the subset of the CloudWatch API we need.
