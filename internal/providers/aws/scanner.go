@@ -180,17 +180,15 @@ func scanRegion(ctx context.Context, cfg aws.Config, accountID, region string, o
 	// Discover EC2 GPU instances
 	ec2Instances, err := DiscoverEC2GPUInstances(ctx, ec2Client, accountID, region)
 	if err != nil {
-		return nil, err
-	}
-
-	// Enrich with CloudWatch metrics
-	if !opts.SkipMetrics && len(ec2Instances) > 0 {
-		if err := EnrichEC2Metrics(ctx, cwClient, ec2Instances, opts.MetricWindow); err != nil {
-			fmt.Fprintf(os.Stderr,"  warning: could not enrich EC2 metrics in %s: %v\n", region, err)
+		fmt.Fprintf(os.Stderr, "  warning: could not scan EC2 in %s: %v\n", region, err)
+	} else {
+		if !opts.SkipMetrics && len(ec2Instances) > 0 {
+			if err := EnrichEC2Metrics(ctx, cwClient, ec2Instances, opts.MetricWindow); err != nil {
+				fmt.Fprintf(os.Stderr, "  warning: could not enrich EC2 metrics in %s: %v\n", region, err)
+			}
 		}
+		allInstances = append(allInstances, ec2Instances...)
 	}
-
-	allInstances = append(allInstances, ec2Instances...)
 
 	// Discover SageMaker endpoints
 	if !opts.SkipSageMaker {
