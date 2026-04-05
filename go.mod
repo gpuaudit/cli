@@ -1,4 +1,4 @@
-module github.com/maksimov/gpuaudit
+module github.com/gpuaudit/gpuaudit
 
 go 1.24.0
 

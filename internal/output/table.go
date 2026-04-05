@@ -10,7 +10,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/maksimov/gpuaudit/internal/models"
+	"github.com/gpuaudit/gpuaudit/internal/models"
 )
 
 // FormatTable writes a human-readable table report to the writer.
