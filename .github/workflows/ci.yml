@@ -45,7 +45,7 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
         run: |
-          go build -ldflags "-X main.version=${{ github.ref_name }}" \
+          go build -ldflags "-s -w -X main.version=${{ github.ref_name }}" \
             -o gpuaudit-${{ matrix.goos }}-${{ matrix.goarch }} ./cmd/gpuaudit
       - name: Upload release asset
         uses: softprops/action-gh-release@v2

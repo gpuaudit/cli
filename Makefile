@@ -1,5 +1,5 @@
 VERSION ?= dev
-LDFLAGS := -X main.version=$(VERSION)
+LDFLAGS := -s -w -X main.version=$(VERSION)
 
 build:
 	go build -ldflags "$(LDFLAGS)" -o gpuaudit ./cmd/gpuaudit
