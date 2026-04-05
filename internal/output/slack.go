@@ -1,3 +1,6 @@
+// Copyright 2026 the gpuaudit authors. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 package output
 
 import (

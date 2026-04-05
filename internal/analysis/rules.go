@@ -1,3 +1,6 @@
+// Copyright 2026 the gpuaudit authors. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 // Package analysis implements waste detection rules for GPU instances.
 package analysis
 
