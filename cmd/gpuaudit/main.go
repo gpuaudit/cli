@@ -12,9 +12,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	awsprovider "github.com/gpuaudit/gpuaudit/internal/providers/aws"
-	"github.com/gpuaudit/gpuaudit/internal/output"
-	"github.com/gpuaudit/gpuaudit/internal/pricing"
+	awsprovider "github.com/gpuaudit/cli/internal/providers/aws"
+	"github.com/gpuaudit/cli/internal/output"
+	"github.com/gpuaudit/cli/internal/pricing"
 )
 
 var version = "dev"

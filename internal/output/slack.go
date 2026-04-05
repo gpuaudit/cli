@@ -9,7 +9,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/gpuaudit/gpuaudit/internal/models"
+	"github.com/gpuaudit/cli/internal/models"
 )
 
 // FormatSlack writes a Slack Block Kit message JSON payload.

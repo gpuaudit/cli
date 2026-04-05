@@ -13,7 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer"
 	cetypes "github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
 
-	"github.com/gpuaudit/gpuaudit/internal/models"
+	"github.com/gpuaudit/cli/internal/models"
 )
 
 // CostExplorerClient is the subset of the Cost Explorer API we need.

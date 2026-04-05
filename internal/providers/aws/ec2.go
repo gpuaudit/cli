@@ -14,8 +14,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 
-	"github.com/gpuaudit/gpuaudit/internal/models"
-	"github.com/gpuaudit/gpuaudit/internal/pricing"
+	"github.com/gpuaudit/cli/internal/models"
+	"github.com/gpuaudit/cli/internal/pricing"
 )
 
 // EC2Client is the subset of the EC2 API we need.

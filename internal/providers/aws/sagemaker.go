@@ -13,8 +13,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sagemaker"
 	smtypes "github.com/aws/aws-sdk-go-v2/service/sagemaker/types"
 
-	"github.com/gpuaudit/gpuaudit/internal/models"
-	"github.com/gpuaudit/gpuaudit/internal/pricing"
+	"github.com/gpuaudit/cli/internal/models"
+	"github.com/gpuaudit/cli/internal/pricing"
 )
 
 // SageMakerClient is the subset of the SageMaker API we need.

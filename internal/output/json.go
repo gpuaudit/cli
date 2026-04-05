@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/gpuaudit/gpuaudit/internal/models"
+	"github.com/gpuaudit/cli/internal/models"
 )
 
 // FormatJSON writes the scan result as pretty-printed JSON.
