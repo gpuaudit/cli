@@ -40,6 +40,7 @@ var (
 	scanOutput        string
 	scanSkipMetrics   bool
 	scanSkipSageMaker bool
+	scanSkipEKS       bool
 	scanSkipCosts     bool
 	scanExcludeTags   []string
 	scanMinUptimeDays int
@@ -58,6 +59,7 @@ func init() {
 	scanCmd.Flags().StringVarP(&scanOutput, "output", "o", "", "Write output to file instead of stdout")
 	scanCmd.Flags().BoolVar(&scanSkipMetrics, "skip-metrics", false, "Skip CloudWatch metrics collection (faster but less accurate)")
 	scanCmd.Flags().BoolVar(&scanSkipSageMaker, "skip-sagemaker", false, "Skip SageMaker endpoint scanning")
+	scanCmd.Flags().BoolVar(&scanSkipEKS, "skip-eks", false, "Skip EKS GPU node group scanning")
 	scanCmd.Flags().BoolVar(&scanSkipCosts, "skip-costs", false, "Skip Cost Explorer data enrichment")
 	scanCmd.Flags().StringSliceVar(&scanExcludeTags, "exclude-tag", nil, "Exclude instances matching tag (key=value, repeatable)")
 	scanCmd.Flags().IntVar(&scanMinUptimeDays, "min-uptime-days", 0, "Only flag instances running for at least this many days")
@@ -76,6 +78,7 @@ func runScan(cmd *cobra.Command, args []string) error {
 	opts.Regions = scanRegions
 	opts.SkipMetrics = scanSkipMetrics
 	opts.SkipSageMaker = scanSkipSageMaker
+	opts.SkipEKS = scanSkipEKS
 	opts.SkipCosts = scanSkipCosts
 	opts.ExcludeTags = parseExcludeTags(scanExcludeTags)
 	opts.MinUptimeDays = scanMinUptimeDays
@@ -198,6 +201,16 @@ var iamPolicyCmd = &cobra.Command{
 						"sagemaker:ListEndpoints",
 						"sagemaker:DescribeEndpoint",
 						"sagemaker:DescribeEndpointConfig",
+					},
+					"Resource": "*",
+				},
+				{
+					"Sid":    "GPUAuditEKSReadOnly",
+					"Effect": "Allow",
+					"Action": []string{
+						"eks:ListClusters",
+						"eks:ListNodegroups",
+						"eks:DescribeNodegroup",
 					},
 					"Resource": "*",
 				},
