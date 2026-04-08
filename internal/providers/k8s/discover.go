@@ -141,11 +141,17 @@ func nodeToGPUInstance(node corev1.Node, gpuPods []corev1.Pod, clusterName strin
 		}
 	}
 
+	// Use short hostname (strip .ec2.internal etc.)
+	hostname := node.Name
+	if idx := strings.IndexByte(hostname, '.'); idx > 0 {
+		hostname = hostname[:idx]
+	}
+
 	return &models.GPUInstance{
 		InstanceID:   instanceID,
 		Source:       models.SourceK8sNode,
 		Region:       region,
-		Name:         fmt.Sprintf("%s/%s", clusterName, node.Name),
+		Name:         fmt.Sprintf("%s/%s", clusterName, hostname),
 		Tags:         tags,
 		ClusterName:  clusterName,
 		GPUAllocated: gpuAllocated,
