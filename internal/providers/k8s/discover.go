@@ -92,8 +92,17 @@ func nodeToGPUInstance(node corev1.Node, gpuPods []corev1.Pod, clusterName strin
 		totalVRAMGiB = spec.TotalVRAMGiB
 		hourlyCost = spec.OnDemandHourly
 		gpuCount = spec.GPUCount // trust pricing DB over node allocatable
-	} else if product, ok := node.Labels["nvidia.com/gpu.product"]; ok {
-		gpuModel = product
+	} else {
+		// Fall back to node labels for GPU model identification
+		for _, labelKey := range []string{
+			"nvidia.com/gpu.product",              // NVIDIA GPU Operator
+			"karpenter.k8s.aws/instance-gpu-name", // Karpenter on AWS
+		} {
+			if v, ok := node.Labels[labelKey]; ok && v != "" {
+				gpuModel = strings.ToUpper(v)
+				break
+			}
+		}
 	}
 
 	// Instance ID: prefer EC2 instance ID from providerID, fall back to node name
