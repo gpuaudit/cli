@@ -15,6 +15,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/service/eks"
 	"github.com/aws/aws-sdk-go-v2/service/sagemaker"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 
@@ -29,6 +30,7 @@ type ScanOptions struct {
 	MetricWindow  MetricWindow
 	SkipMetrics   bool
 	SkipSageMaker bool
+	SkipEKS       bool
 	SkipCosts     bool
 	ExcludeTags   map[string]string
 	MinUptimeDays int
@@ -203,6 +205,17 @@ func scanRegion(ctx context.Context, cfg aws.Config, accountID, region string, o
 				}
 			}
 			allInstances = append(allInstances, smInstances...)
+		}
+	}
+
+	// Discover EKS GPU node groups
+	if !opts.SkipEKS {
+		eksClient := eks.NewFromConfig(regionalCfg)
+		eksInstances, err := DiscoverEKSGPUNodeGroups(ctx, eksClient, accountID, region)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "  warning: could not scan EKS in %s: %v\n", region, err)
+		} else {
+			allInstances = append(allInstances, eksInstances...)
 		}
 	}
 
