@@ -9,10 +9,14 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/gpuaudit/cli/internal/models"
+	"github.com/gpuaudit/cli/internal/analysis"
 	awsprovider "github.com/gpuaudit/cli/internal/providers/aws"
+	k8sprovider "github.com/gpuaudit/cli/internal/providers/k8s"
 	"github.com/gpuaudit/cli/internal/output"
 	"github.com/gpuaudit/cli/internal/pricing"
 )
@@ -41,7 +45,10 @@ var (
 	scanSkipMetrics   bool
 	scanSkipSageMaker bool
 	scanSkipEKS       bool
+	scanSkipK8s       bool
 	scanSkipCosts     bool
+	scanKubeconfig    string
+	scanKubeContext   string
 	scanExcludeTags   []string
 	scanMinUptimeDays int
 )
@@ -60,7 +67,10 @@ func init() {
 	scanCmd.Flags().BoolVar(&scanSkipMetrics, "skip-metrics", false, "Skip CloudWatch metrics collection (faster but less accurate)")
 	scanCmd.Flags().BoolVar(&scanSkipSageMaker, "skip-sagemaker", false, "Skip SageMaker endpoint scanning")
 	scanCmd.Flags().BoolVar(&scanSkipEKS, "skip-eks", false, "Skip EKS GPU node group scanning")
+	scanCmd.Flags().BoolVar(&scanSkipK8s, "skip-k8s", false, "Skip Kubernetes API GPU node scanning")
 	scanCmd.Flags().BoolVar(&scanSkipCosts, "skip-costs", false, "Skip Cost Explorer data enrichment")
+	scanCmd.Flags().StringVar(&scanKubeconfig, "kubeconfig", "", "Path to kubeconfig file (default: ~/.kube/config)")
+	scanCmd.Flags().StringVar(&scanKubeContext, "kube-context", "", "Kubernetes context to use (default: current context)")
 	scanCmd.Flags().StringSliceVar(&scanExcludeTags, "exclude-tag", nil, "Exclude instances matching tag (key=value, repeatable)")
 	scanCmd.Flags().IntVar(&scanMinUptimeDays, "min-uptime-days", 0, "Only flag instances running for at least this many days")
 
@@ -85,7 +95,28 @@ func runScan(cmd *cobra.Command, args []string) error {
 
 	result, err := awsprovider.Scan(ctx, opts)
 	if err != nil {
-		return fmt.Errorf("scan failed: %w", err)
+		if scanSkipK8s {
+			return fmt.Errorf("scan failed: %w", err)
+		}
+		// AWS scan failed but K8s scan may still work
+		fmt.Fprintf(os.Stderr, "  warning: AWS scan failed: %v\n", err)
+		result = &models.ScanResult{Timestamp: time.Now()}
+	}
+
+	// Kubernetes API scan
+	if !scanSkipK8s {
+		k8sOpts := k8sprovider.ScanOptions{
+			Kubeconfig: scanKubeconfig,
+			Context:    scanKubeContext,
+		}
+		k8sInstances, err := k8sprovider.Scan(ctx, k8sOpts)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "  warning: Kubernetes scan failed: %v\n", err)
+		} else if len(k8sInstances) > 0 {
+			analysis.AnalyzeAll(k8sInstances)
+			result.Instances = append(result.Instances, k8sInstances...)
+			result.Summary = awsprovider.BuildSummary(result.Instances)
+		}
 	}
 
 	// Determine output writer

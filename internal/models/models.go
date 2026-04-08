@@ -14,6 +14,7 @@ const (
 	SourceSageMakerEndpoint Source = "sagemaker-endpoint"
 	SourceSageMakerTraining Source = "sagemaker-training"
 	SourceEKS               Source = "eks"
+	SourceK8sNode           Source = "k8s-node"
 )
 
 // Severity indicates how urgent a waste signal is.
@@ -62,6 +63,10 @@ type GPUInstance struct {
 	GPUCount      int     `json:"gpu_count"`
 	GPUVRAMGiB    float64 `json:"gpu_vram_gib"`
 	TotalVRAMGiB  float64 `json:"total_vram_gib"`
+
+	// Kubernetes (populated for k8s-node source)
+	ClusterName  string `json:"cluster_name,omitempty"`
+	GPUAllocated int    `json:"gpu_allocated,omitempty"`
 
 	// State
 	State       string    `json:"state"`

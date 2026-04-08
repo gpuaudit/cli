@@ -158,7 +158,7 @@ func Scan(ctx context.Context, opts ScanOptions) (*models.ScanResult, error) {
 	}
 
 	// Build summary
-	summary := buildSummary(allInstances)
+	summary := BuildSummary(allInstances)
 
 	return &models.ScanResult{
 		Timestamp:    start,
@@ -231,7 +231,8 @@ func getGPURegions(ctx context.Context, cfg aws.Config) ([]string, error) {
 	}, nil
 }
 
-func buildSummary(instances []models.GPUInstance) models.ScanSummary {
+// BuildSummary computes aggregate statistics for a set of GPU instances.
+func BuildSummary(instances []models.GPUInstance) models.ScanSummary {
 	s := models.ScanSummary{
 		TotalInstances: len(instances),
 	}

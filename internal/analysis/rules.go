@@ -27,6 +27,7 @@ func analyzeInstance(inst *models.GPUInstance) {
 		ruleStale,
 		ruleSageMakerLowUtil,
 		ruleSageMakerOversized,
+		ruleK8sUnallocatedGPU,
 	}
 	for _, rule := range rules {
 		rule(inst)
@@ -300,4 +301,49 @@ func ruleSageMakerOversized(inst *models.GPUInstance) {
 		SavingsPercent:         (savings / inst.MonthlyCost) * 100,
 		Risk:                   models.RiskMedium,
 	})
+}
+
+// Rule 7: K8s node with unallocated GPU capacity.
+func ruleK8sUnallocatedGPU(inst *models.GPUInstance) {
+	if inst.Source != models.SourceK8sNode {
+		return
+	}
+	if inst.State != "ready" {
+		return
+	}
+
+	if inst.GPUAllocated == 0 && inst.UptimeHours >= 24 {
+		inst.WasteSignals = append(inst.WasteSignals, models.WasteSignal{
+			Type:       "idle",
+			Severity:   models.SeverityCritical,
+			Confidence: 0.9,
+			Evidence:   fmt.Sprintf("GPU node has %d GPU(s) but no pods requesting GPUs for %.0f+ hours.", inst.GPUCount, inst.UptimeHours),
+		})
+		inst.Recommendations = append(inst.Recommendations, models.Recommendation{
+			Action:             models.ActionTerminate,
+			Description:        fmt.Sprintf("No GPU pods scheduled on this node for %d days. Remove from node pool or scale down.", int(inst.UptimeHours/24)),
+			CurrentMonthlyCost: inst.MonthlyCost,
+			MonthlySavings:     inst.MonthlyCost,
+			SavingsPercent:     100,
+			Risk:               models.RiskLow,
+		})
+	} else if inst.GPUAllocated > 0 && inst.GPUAllocated < inst.GPUCount {
+		unused := inst.GPUCount - inst.GPUAllocated
+		wastedCost := inst.MonthlyCost * float64(unused) / float64(inst.GPUCount)
+		inst.WasteSignals = append(inst.WasteSignals, models.WasteSignal{
+			Type:       "low_utilization",
+			Severity:   models.SeverityWarning,
+			Confidence: 0.8,
+			Evidence:   fmt.Sprintf("Only %d of %d GPUs allocated to pods. %d GPU(s) sitting idle.", inst.GPUAllocated, inst.GPUCount, unused),
+		})
+		inst.Recommendations = append(inst.Recommendations, models.Recommendation{
+			Action:                 models.ActionDownsize,
+			Description:            fmt.Sprintf("Node has %d unused GPU(s). Consider a smaller instance or bin-packing more workloads.", unused),
+			CurrentMonthlyCost:     inst.MonthlyCost,
+			RecommendedMonthlyCost: inst.MonthlyCost - wastedCost,
+			MonthlySavings:         wastedCost,
+			SavingsPercent:         (wastedCost / inst.MonthlyCost) * 100,
+			Risk:                   models.RiskMedium,
+		})
+	}
 }
