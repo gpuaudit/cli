@@ -24,19 +24,18 @@ func FormatDiffTable(w io.Writer, d *diff.DiffResult) {
 	newCount := len(d.Added) + len(d.Changed) + d.UnchangedCount
 
 	// Cost summary box
-	fmt.Fprintf(w, "  ┌──────────────────────────────────────────────────────────┐\n")
-	fmt.Fprintf(w, "  │  Cost Delta                                              │\n")
-	fmt.Fprintf(w, "  ├──────────────────────────────────────────────────────────┤\n")
-	fmt.Fprintf(w, "  │  Monthly spend:   $%-9.0f → $%-9.0f (%s)%s│\n",
-		cs.OldTotalMonthlyCost, cs.NewTotalMonthlyCost,
-		diffFmtDelta(cs.CostChange), diffPad(cs.CostChange))
-	fmt.Fprintf(w, "  │  Estimated waste: $%-9.0f → $%-9.0f (%s)%s│\n",
-		cs.OldTotalWaste, cs.NewTotalWaste,
-		diffFmtDelta(cs.WasteChange), diffPad(cs.WasteChange))
-	fmt.Fprintf(w, "  │  Instances:       %-3d → %-3d  (-%d removed, +%d added)%s│\n",
-		oldCount, newCount, len(d.Removed), len(d.Added),
-		diffPadInstances(oldCount, newCount, len(d.Removed), len(d.Added)))
-	fmt.Fprintf(w, "  └──────────────────────────────────────────────────────────┘\n")
+	boxWidth := 58 // inner width between │ markers
+	boxLine := strings.Repeat("─", boxWidth)
+	fmt.Fprintf(w, "  ┌%s┐\n", boxLine)
+	writeBoxLine(w, "Cost Delta", boxWidth)
+	fmt.Fprintf(w, "  ├%s┤\n", boxLine)
+	writeBoxLine(w, fmt.Sprintf("Monthly spend:   $%-9.0f → $%-9.0f (%s)",
+		cs.OldTotalMonthlyCost, cs.NewTotalMonthlyCost, diffFmtDelta(cs.CostChange)), boxWidth)
+	writeBoxLine(w, fmt.Sprintf("Estimated waste: $%-9.0f → $%-9.0f (%s)",
+		cs.OldTotalWaste, cs.NewTotalWaste, diffFmtDelta(cs.WasteChange)), boxWidth)
+	writeBoxLine(w, fmt.Sprintf("Instances:       %d → %d  (-%d removed, +%d added)",
+		oldCount, newCount, len(d.Removed), len(d.Added)), boxWidth)
+	fmt.Fprintf(w, "  └%s┘\n", boxLine)
 
 	// Removed
 	if len(d.Removed) > 0 {
@@ -109,32 +108,20 @@ func sortInstancesByCost(instances []models.GPUInstance) {
 	})
 }
 
+func writeBoxLine(w io.Writer, content string, width int) {
+	// Pad content to fill the box width (with 2-char margin on each side)
+	inner := width - 4 // 2 spaces on each side
+	if len(content) > inner {
+		content = content[:inner]
+	}
+	fmt.Fprintf(w, "  │  %-*s  │\n", inner, content)
+}
+
 func diffFmtDelta(v float64) string {
 	if v >= 0 {
 		return fmt.Sprintf("+$%.0f", v)
 	}
 	return fmt.Sprintf("-$%.0f", -v)
-}
-
-// diffPad returns spaces to align the summary box closing border.
-func diffPad(delta float64) string {
-	s := diffFmtDelta(delta)
-	// The content before the delta is ~44 chars, delta is variable, need to fill to col 59
-	used := 44 + len(s) + 2 // +2 for parens
-	target := 59
-	if used >= target {
-		return ""
-	}
-	return strings.Repeat(" ", target-used)
-}
-
-func diffPadInstances(oldCount, newCount, removed, added int) string {
-	content := fmt.Sprintf("  │  Instances:       %-3d → %-3d  (-%d removed, +%d added)",
-		oldCount, newCount, removed, added)
-	if len(content) >= 59 {
-		return ""
-	}
-	return strings.Repeat(" ", 59-len(content))
 }
 
 // FormatDiffJSON writes the diff result as pretty-printed JSON.
