@@ -34,6 +34,8 @@ func FormatTable(w io.Writer, result *models.ScanResult) {
 	fmt.Fprintf(w, "  │  Estimated monthly waste:  $%-10.0f (%4.0f%%)           │\n", s.TotalEstimatedWaste, s.WastePercent)
 	fmt.Fprintf(w, "  └──────────────────────────────────────────────────────────┘\n\n")
 
+	printTargetSummary(w, result)
+
 	if s.TotalInstances == 0 {
 		fmt.Fprintf(w, "  No GPU instances found.\n\n")
 		return
@@ -42,14 +44,16 @@ func FormatTable(w io.Writer, result *models.ScanResult) {
 	// Group instances by severity
 	critical, warning, healthy := groupBySeverity(result.Instances)
 
+	multiTarget := len(result.TargetSummaries) > 1
+
 	if len(critical) > 0 {
 		fmt.Fprintf(w, "  CRITICAL — %d instance(s), $%.0f/mo potential savings\n\n", len(critical), sumSavings(critical))
-		printInstanceTable(w, critical)
+		printInstanceTable(w, critical, multiTarget)
 	}
 
 	if len(warning) > 0 {
 		fmt.Fprintf(w, "  WARNING — %d instance(s), $%.0f/mo potential savings\n\n", len(warning), sumSavings(warning))
-		printInstanceTable(w, warning)
+		printInstanceTable(w, warning, multiTarget)
 	}
 
 	if len(healthy) > 0 {
@@ -57,17 +61,54 @@ func FormatTable(w io.Writer, result *models.ScanResult) {
 	}
 }
 
-func printInstanceTable(w io.Writer, instances []models.GPUInstance) {
-	// Header
-	fmt.Fprintf(w, "  %-36s %-26s %10s  %-16s  %s\n",
-		"Instance", "Type", "Monthly", "Signal", "Recommendation")
-	fmt.Fprintf(w, "  %s %s %s  %s  %s\n",
-		strings.Repeat("─", 36),
-		strings.Repeat("─", 26),
-		strings.Repeat("─", 10),
-		strings.Repeat("─", 16),
-		strings.Repeat("─", 50),
-	)
+func printTargetSummary(w io.Writer, result *models.ScanResult) {
+	if len(result.TargetSummaries) < 2 {
+		return
+	}
+
+	fmt.Fprintf(w, "  By Target\n")
+	fmt.Fprintf(w, "  ┌──────────────┬───────────┬───────────┬───────────┬───────┐\n")
+	fmt.Fprintf(w, "  │ Target       │ Instances │ Spend/mo  │ Waste/mo  │ Waste │\n")
+	fmt.Fprintf(w, "  ├──────────────┼───────────┼───────────┼───────────┼───────┤\n")
+	for _, ts := range result.TargetSummaries {
+		fmt.Fprintf(w, "  │ %-12s │ %9d │ $%8.0f │ $%8.0f │ %4.0f%% │\n",
+			ts.Target, ts.TotalInstances, ts.TotalMonthlyCost,
+			ts.TotalEstimatedWaste, ts.WastePercent)
+	}
+	fmt.Fprintf(w, "  └──────────────┴───────────┴───────────┴───────────┴───────┘\n\n")
+
+	if len(result.TargetErrors) > 0 {
+		fmt.Fprintf(w, "  Warnings\n")
+		for _, te := range result.TargetErrors {
+			fmt.Fprintf(w, "  ✗ %s — %s\n", te.Target, te.Error)
+		}
+		fmt.Fprintln(w)
+	}
+}
+
+func printInstanceTable(w io.Writer, instances []models.GPUInstance, multiTarget bool) {
+	if multiTarget {
+		fmt.Fprintf(w, "  %-36s %-14s %-26s %10s  %-16s  %s\n",
+			"Instance", "Target", "Type", "Monthly", "Signal", "Recommendation")
+		fmt.Fprintf(w, "  %s %s %s %s  %s  %s\n",
+			strings.Repeat("─", 36),
+			strings.Repeat("─", 14),
+			strings.Repeat("─", 26),
+			strings.Repeat("─", 10),
+			strings.Repeat("─", 16),
+			strings.Repeat("─", 50),
+		)
+	} else {
+		fmt.Fprintf(w, "  %-36s %-26s %10s  %-16s  %s\n",
+			"Instance", "Type", "Monthly", "Signal", "Recommendation")
+		fmt.Fprintf(w, "  %s %s %s  %s  %s\n",
+			strings.Repeat("─", 36),
+			strings.Repeat("─", 26),
+			strings.Repeat("─", 10),
+			strings.Repeat("─", 16),
+			strings.Repeat("─", 50),
+		)
+	}
 
 	for _, inst := range instances {
 		name := inst.Name
@@ -94,8 +135,13 @@ func printInstanceTable(w io.Writer, instances []models.GPUInstance) {
 			rec = inst.Recommendations[0].Description
 		}
 
-		fmt.Fprintf(w, "  %-36s %-26s $%9.0f  %-16s  %s\n",
-			name, typeDesc, inst.MonthlyCost, signal, rec)
+		if multiTarget {
+			fmt.Fprintf(w, "  %-36s %-14s %-26s $%9.0f  %-16s  %s\n",
+				name, inst.AccountID, typeDesc, inst.MonthlyCost, signal, rec)
+		} else {
+			fmt.Fprintf(w, "  %-36s %-26s $%9.0f  %-16s  %s\n",
+				name, typeDesc, inst.MonthlyCost, signal, rec)
+		}
 	}
 	fmt.Fprintln(w)
 }
