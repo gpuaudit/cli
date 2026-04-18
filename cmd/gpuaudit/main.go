@@ -342,8 +342,21 @@ var iamPolicyCmd = &cobra.Command{
 					},
 					"Resource": "*",
 				},
+				{
+					"Sid":      "GPUAuditCrossAccount",
+					"Effect":   "Allow",
+					"Action":   "sts:AssumeRole",
+					"Resource": "arn:aws:iam::*:role/gpuaudit-reader",
+				},
+				{
+					"Sid":      "GPUAuditOrganizations",
+					"Effect":   "Allow",
+					"Action":   "organizations:ListAccounts",
+					"Resource": "*",
+				},
 			},
 		}
+		fmt.Fprintln(os.Stdout, "// The last two statements (CrossAccount, Organizations) are only needed for --targets or --org scanning.")
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
 		enc.Encode(policy)
