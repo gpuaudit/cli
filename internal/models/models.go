@@ -117,12 +117,15 @@ type Recommendation struct {
 
 // ScanResult holds the complete output of a gpuaudit scan.
 type ScanResult struct {
-	Timestamp     time.Time     `json:"timestamp"`
-	AccountID     string        `json:"account_id"`
-	Regions       []string      `json:"regions"`
-	ScanDuration  string        `json:"scan_duration"`
-	Instances     []GPUInstance `json:"instances"`
-	Summary       ScanSummary   `json:"summary"`
+	Timestamp       time.Time          `json:"timestamp"`
+	AccountID       string             `json:"account_id"`
+	Targets         []string           `json:"targets,omitempty"`
+	Regions         []string           `json:"regions"`
+	ScanDuration    string             `json:"scan_duration"`
+	Instances       []GPUInstance      `json:"instances"`
+	Summary         ScanSummary        `json:"summary"`
+	TargetSummaries []TargetSummary    `json:"target_summaries,omitempty"`
+	TargetErrors    []TargetErrorInfo  `json:"target_errors,omitempty"`
 }
 
 // ScanSummary provides aggregate statistics for a scan.
@@ -135,6 +138,23 @@ type ScanSummary struct {
 	WarningCount      int     `json:"warning_count"`
 	InfoCount         int     `json:"info_count"`
 	HealthyCount      int     `json:"healthy_count"`
+}
+
+// TargetSummary provides per-target aggregate statistics.
+type TargetSummary struct {
+	Target              string  `json:"target"`
+	TotalInstances      int     `json:"total_instances"`
+	TotalMonthlyCost    float64 `json:"total_monthly_cost"`
+	TotalEstimatedWaste float64 `json:"total_estimated_waste"`
+	WastePercent        float64 `json:"waste_percent"`
+	CriticalCount       int     `json:"critical_count"`
+	WarningCount        int     `json:"warning_count"`
+}
+
+// TargetErrorInfo describes a target that failed to scan.
+type TargetErrorInfo struct {
+	Target string `json:"target"`
+	Error  string `json:"error"`
 }
 
 // Ptr is a convenience helper for creating pointer values in tests and literals.
