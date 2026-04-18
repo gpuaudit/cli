@@ -118,6 +118,106 @@ gpuaudit diff scan-apr-08.json scan-apr-15.json
 
 Matches instances by ID. Reports added, removed, and changed instances with per-field diffs (instance type, pricing model, cost, state, GPU allocation, waste severity).
 
+## Multi-Account Scanning
+
+Scan multiple AWS accounts in a single invocation using STS AssumeRole.
+
+### Prerequisites
+
+Deploy a read-only IAM role (`gpuaudit-reader`) to each target account. See [Cross-Account Role Setup](#cross-account-role-setup) below.
+
+### Usage
+
+```bash
+# Scan specific accounts
+gpuaudit scan --targets 111111111111,222222222222 --role gpuaudit-reader
+
+# Scan entire AWS Organization
+gpuaudit scan --org --role gpuaudit-reader
+
+# Exclude management account
+gpuaudit scan --org --role gpuaudit-reader --skip-self
+
+# With external ID
+gpuaudit scan --targets 111111111111 --role gpuaudit-reader --external-id my-secret
+```
+
+### Cross-Account Role Setup
+
+#### Terraform
+
+```hcl
+variable "management_account_id" {
+  description = "AWS account ID where gpuaudit runs"
+  type        = string
+}
+
+resource "aws_iam_role" "gpuaudit_reader" {
+  name = "gpuaudit-reader"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { AWS = "arn:aws:iam::${var.management_account_id}:root" }
+      Action    = "sts:AssumeRole"
+    }]
+  })
+}
+
+resource "aws_iam_role_policy" "gpuaudit_reader" {
+  name   = "gpuaudit-policy"
+  role   = aws_iam_role.gpuaudit_reader.id
+  policy = file("gpuaudit-policy.json")  # from: gpuaudit iam-policy > gpuaudit-policy.json
+}
+```
+
+Deploy to all accounts using Terraform workspaces or CloudFormation StackSets.
+
+#### CloudFormation StackSet
+
+```yaml
+AWSTemplateFormatVersion: "2010-09-09"
+Parameters:
+  ManagementAccountId:
+    Type: String
+Resources:
+  GpuAuditRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: gpuaudit-reader
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Sub "arn:aws:iam::${ManagementAccountId}:root"
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: gpuaudit-policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeInstances
+                  - ec2:DescribeInstanceTypes
+                  - ec2:DescribeRegions
+                  - sagemaker:ListEndpoints
+                  - sagemaker:DescribeEndpoint
+                  - sagemaker:DescribeEndpointConfig
+                  - eks:ListClusters
+                  - eks:ListNodegroups
+                  - eks:DescribeNodegroup
+                  - cloudwatch:GetMetricData
+                  - cloudwatch:GetMetricStatistics
+                  - cloudwatch:ListMetrics
+                  - ce:GetCostAndUsage
+                  - ce:GetReservationUtilization
+                  - ce:GetSavingsPlansUtilization
+                  - pricing:GetProducts
+                Resource: "*"
+```
+
 ## IAM permissions
 
 gpuaudit is read-only. It never modifies your infrastructure. Generate the minimal IAM policy:
