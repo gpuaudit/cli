@@ -148,8 +148,7 @@ func printInstanceTable(w io.Writer, instances []models.GPUInstance, multiTarget
 
 func groupBySeverity(instances []models.GPUInstance) (critical, warning, healthy []models.GPUInstance) {
 	for _, inst := range instances {
-		maxSev := maxSeverity(inst.WasteSignals)
-		switch maxSev {
+		switch models.MaxSeverity(inst.WasteSignals) {
 		case models.SeverityCritical:
 			critical = append(critical, inst)
 		case models.SeverityWarning:
@@ -169,22 +168,6 @@ func groupBySeverity(instances []models.GPUInstance) (critical, warning, healthy
 	sortBySavings(warning)
 
 	return
-}
-
-func maxSeverity(signals []models.WasteSignal) models.Severity {
-	max := models.Severity("")
-	for _, s := range signals {
-		if s.Severity == models.SeverityCritical {
-			return models.SeverityCritical
-		}
-		if s.Severity == models.SeverityWarning {
-			max = models.SeverityWarning
-		}
-		if s.Severity == models.SeverityInfo && max == "" {
-			max = models.SeverityInfo
-		}
-	}
-	return max
 }
 
 func sumSavings(instances []models.GPUInstance) float64 {

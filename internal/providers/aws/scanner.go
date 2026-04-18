@@ -74,7 +74,7 @@ func Scan(ctx context.Context, opts ScanOptions) (*models.ScanResult, error) {
 		orgClient = organizations.NewFromConfig(cfg)
 	}
 
-	targets, targetErrors := ResolveTargets(ctx, cfg, stsClient, orgClient, opts)
+	callerAccount, targets, targetErrors := ResolveTargets(ctx, cfg, stsClient, orgClient, opts)
 
 	// Print target errors to stderr and check for fatal failure
 	for _, te := range targetErrors {
@@ -83,9 +83,6 @@ func Scan(ctx context.Context, opts ScanOptions) (*models.ScanResult, error) {
 	if len(targets) == 0 {
 		return nil, fmt.Errorf("no scannable targets resolved (errors: %d)", len(targetErrors))
 	}
-
-	// Determine the caller account from the first target
-	callerAccount := targets[0].AccountID
 
 	// Determine regions to scan
 	regions := opts.Regions
@@ -106,7 +103,6 @@ func Scan(ctx context.Context, opts ScanOptions) (*models.ScanResult, error) {
 	type targetResult struct {
 		instances []models.GPUInstance
 		regions   []string
-		err       error
 	}
 
 	targetResults := make(chan targetResult, len(targets))
@@ -116,8 +112,8 @@ func Scan(ctx context.Context, opts ScanOptions) (*models.ScanResult, error) {
 		wg.Add(1)
 		go func(target Target) {
 			defer wg.Done()
-			instances, scannedRegions, scanErr := scanTarget(ctx, target, regions, opts)
-			targetResults <- targetResult{instances: instances, regions: scannedRegions, err: scanErr}
+			instances, scannedRegions := scanTarget(ctx, target, regions, opts)
+			targetResults <- targetResult{instances: instances, regions: scannedRegions}
 		}(t)
 	}
 
@@ -130,10 +126,6 @@ func Scan(ctx context.Context, opts ScanOptions) (*models.ScanResult, error) {
 	regionSet := make(map[string]bool)
 
 	for res := range targetResults {
-		if res.err != nil {
-			fmt.Fprintf(os.Stderr, "  warning: target scan error: %v\n", res.err)
-			continue
-		}
 		allInstances = append(allInstances, res.instances...)
 		for _, r := range res.regions {
 			regionSet[r] = true
@@ -211,7 +203,7 @@ func Scan(ctx context.Context, opts ScanOptions) (*models.ScanResult, error) {
 
 // scanTarget scans all regions for a single target account, including
 // Cost Explorer enrichment (which is account-scoped).
-func scanTarget(ctx context.Context, target Target, regions []string, opts ScanOptions) ([]models.GPUInstance, []string, error) {
+func scanTarget(ctx context.Context, target Target, regions []string, opts ScanOptions) ([]models.GPUInstance, []string) {
 	type regionResult struct {
 		region    string
 		instances []models.GPUInstance
@@ -257,7 +249,7 @@ func scanTarget(ctx context.Context, target Target, regions []string, opts ScanO
 		}
 	}
 
-	return allInstances, scannedRegions, nil
+	return allInstances, scannedRegions
 }
 
 func scanRegion(ctx context.Context, cfg aws.Config, accountID, region string, opts ScanOptions) ([]models.GPUInstance, error) {

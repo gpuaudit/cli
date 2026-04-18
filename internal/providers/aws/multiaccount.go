@@ -46,13 +46,13 @@ type OrgClient interface {
 //   - --skip-self: exclude caller's account
 //   - Self account is never AssumeRole'd — uses original credentials
 //   - Failed AssumeRole calls are collected as TargetError, not fatal
-func ResolveTargets(ctx context.Context, baseCfg aws.Config, stsClient STSClient, orgClient OrgClient, opts ScanOptions) ([]Target, []TargetError) {
+func ResolveTargets(ctx context.Context, baseCfg aws.Config, stsClient STSClient, orgClient OrgClient, opts ScanOptions) (selfAccount string, targets []Target, targetErrors []TargetError) {
 	// Identify the caller's own account.
 	identity, err := stsClient.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
 	if err != nil {
-		return nil, []TargetError{{AccountID: "unknown", Err: fmt.Errorf("GetCallerIdentity: %w", err)}}
+		return "", nil, []TargetError{{AccountID: "unknown", Err: fmt.Errorf("GetCallerIdentity: %w", err)}}
 	}
-	selfAccount := aws.ToString(identity.Account)
+	selfAccount = aws.ToString(identity.Account)
 
 	// Determine the list of account IDs to scan.
 	var accountIDs []string
@@ -61,7 +61,7 @@ func ResolveTargets(ctx context.Context, baseCfg aws.Config, stsClient STSClient
 	case opts.OrgScan:
 		activeAccounts, listErr := listActiveOrgAccounts(ctx, orgClient)
 		if listErr != nil {
-			return nil, []TargetError{{AccountID: "org", Err: fmt.Errorf("ListAccounts: %w", listErr)}}
+			return selfAccount, nil, []TargetError{{AccountID: "org", Err: fmt.Errorf("ListAccounts: %w", listErr)}}
 		}
 		accountIDs = activeAccounts
 	case len(opts.Targets) > 0:
@@ -79,12 +79,8 @@ func ResolveTargets(ctx context.Context, baseCfg aws.Config, stsClient STSClient
 		}
 	default:
 		// No multi-target flags — scan self only.
-		return []Target{{AccountID: selfAccount, Config: baseCfg}}, nil
+		return selfAccount, []Target{{AccountID: selfAccount, Config: baseCfg}}, nil
 	}
-
-	// Resolve credentials for each account.
-	var targets []Target
-	var targetErrors []TargetError
 
 	for _, acctID := range accountIDs {
 		if opts.SkipSelf && acctID == selfAccount {
@@ -106,7 +102,7 @@ func ResolveTargets(ctx context.Context, baseCfg aws.Config, stsClient STSClient
 		targets = append(targets, Target{AccountID: acctID, Config: cfg})
 	}
 
-	return targets, targetErrors
+	return selfAccount, targets, targetErrors
 }
 
 // assumeRole assumes a role in the given account and returns an aws.Config

@@ -1,3 +1,6 @@
+// Copyright 2026 the gpuaudit authors. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 package aws
 
 import (
@@ -16,18 +19,7 @@ func BuildSummary(instances []models.GPUInstance) models.ScanSummary {
 		s.TotalMonthlyCost += inst.MonthlyCost
 		s.TotalEstimatedWaste += inst.EstimatedSavings
 
-		maxSeverity := models.Severity("")
-		for _, sig := range inst.WasteSignals {
-			if sig.Severity == models.SeverityCritical {
-				maxSeverity = models.SeverityCritical
-			} else if sig.Severity == models.SeverityWarning && maxSeverity != models.SeverityCritical {
-				maxSeverity = models.SeverityWarning
-			} else if sig.Severity == models.SeverityInfo && maxSeverity == "" {
-				maxSeverity = models.SeverityInfo
-			}
-		}
-
-		switch maxSeverity {
+		switch models.MaxSeverity(inst.WasteSignals) {
 		case models.SeverityCritical:
 			s.CriticalCount++
 		case models.SeverityWarning:
@@ -67,15 +59,7 @@ func BuildTargetSummaries(instances []models.GPUInstance) []models.TargetSummary
 			ts.TotalMonthlyCost += inst.MonthlyCost
 			ts.TotalEstimatedWaste += inst.EstimatedSavings
 
-			maxSev := models.Severity("")
-			for _, sig := range inst.WasteSignals {
-				if sig.Severity == models.SeverityCritical {
-					maxSev = models.SeverityCritical
-				} else if sig.Severity == models.SeverityWarning && maxSev != models.SeverityCritical {
-					maxSev = models.SeverityWarning
-				}
-			}
-			switch maxSev {
+			switch models.MaxSeverity(inst.WasteSignals) {
 			case models.SeverityCritical:
 				ts.CriticalCount++
 			case models.SeverityWarning:

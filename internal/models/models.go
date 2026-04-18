@@ -157,5 +157,22 @@ type TargetErrorInfo struct {
 	Error  string `json:"error"`
 }
 
+// MaxSeverity returns the highest severity among the given waste signals.
+func MaxSeverity(signals []WasteSignal) Severity {
+	max := Severity("")
+	for _, s := range signals {
+		if s.Severity == SeverityCritical {
+			return SeverityCritical
+		}
+		if s.Severity == SeverityWarning {
+			max = SeverityWarning
+		}
+		if s.Severity == SeverityInfo && max == "" {
+			max = SeverityInfo
+		}
+	}
+	return max
+}
+
 // Ptr is a convenience helper for creating pointer values in tests and literals.
 func Ptr[T any](v T) *T { return &v }
