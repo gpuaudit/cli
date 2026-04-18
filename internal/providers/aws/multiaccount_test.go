@@ -95,10 +95,13 @@ func TestResolveTargets_NoTargets_ReturnsSelfOnly(t *testing.T) {
 	baseCfg := aws.Config{Region: "us-east-1"}
 	opts := ScanOptions{}
 
-	targets, errs := ResolveTargets(context.Background(), baseCfg, stsClient, nil, opts)
+	self, targets, errs := ResolveTargets(context.Background(), baseCfg, stsClient, nil, opts)
 
 	if len(errs) != 0 {
 		t.Fatalf("expected no errors, got %d: %v", len(errs), errs)
+	}
+	if self != "111111111111" {
+		t.Errorf("expected self account 111111111111, got %s", self)
 	}
 	if len(targets) != 1 {
 		t.Fatalf("expected 1 target (self), got %d", len(targets))
@@ -122,7 +125,7 @@ func TestResolveTargets_ExplicitTargets_ReturnsSelfPlusAssumed(t *testing.T) {
 		Role:    "AuditRole",
 	}
 
-	targets, errs := ResolveTargets(context.Background(), baseCfg, stsClient, nil, opts)
+	_, targets, errs := ResolveTargets(context.Background(), baseCfg, stsClient, nil, opts)
 
 	if len(errs) != 0 {
 		t.Fatalf("expected no errors, got %d", len(errs))
@@ -173,10 +176,13 @@ func TestResolveTargets_ExplicitTargets_SkipSelf(t *testing.T) {
 		SkipSelf: true,
 	}
 
-	targets, errs := ResolveTargets(context.Background(), baseCfg, stsClient, nil, opts)
+	self, targets, errs := ResolveTargets(context.Background(), baseCfg, stsClient, nil, opts)
 
 	if len(errs) != 0 {
 		t.Fatalf("expected no errors, got %d", len(errs))
+	}
+	if self != "111111111111" {
+		t.Errorf("expected self account 111111111111, got %s", self)
 	}
 	if len(targets) != 1 {
 		t.Fatalf("expected 1 target (no self), got %d", len(targets))
@@ -202,7 +208,7 @@ func TestResolveTargets_PartialFailure(t *testing.T) {
 		Role:    "AuditRole",
 	}
 
-	targets, errs := ResolveTargets(context.Background(), baseCfg, stsClient, nil, opts)
+	_, targets, errs := ResolveTargets(context.Background(), baseCfg, stsClient, nil, opts)
 
 	// Self + 222 succeeded, 333 failed
 	if len(targets) != 2 {
@@ -238,7 +244,7 @@ func TestResolveTargets_OrgDiscovery(t *testing.T) {
 		Role:    "AuditRole",
 	}
 
-	targets, errs := ResolveTargets(context.Background(), baseCfg, stsClient, orgClient, opts)
+	_, targets, errs := ResolveTargets(context.Background(), baseCfg, stsClient, orgClient, opts)
 
 	if len(errs) != 0 {
 		t.Fatalf("expected no errors, got %d: %v", len(errs), errs)
@@ -286,7 +292,7 @@ func TestResolveTargets_SelfInExplicitTargets_NotAssumed(t *testing.T) {
 		Role:    "AuditRole",
 	}
 
-	targets, errs := ResolveTargets(context.Background(), baseCfg, stsClient, nil, opts)
+	_, targets, errs := ResolveTargets(context.Background(), baseCfg, stsClient, nil, opts)
 
 	if len(errs) != 0 {
 		t.Fatalf("expected no errors, got %d: %v", len(errs), errs)
