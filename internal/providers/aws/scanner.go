@@ -34,6 +34,13 @@ type ScanOptions struct {
 	SkipCosts     bool
 	ExcludeTags   map[string]string
 	MinUptimeDays int
+
+	// Multi-target options
+	Targets    []string
+	Role       string
+	ExternalID string
+	OrgScan    bool
+	SkipSelf   bool
 }
 
 // DefaultScanOptions returns sensible defaults.
