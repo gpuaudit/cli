@@ -317,11 +317,11 @@ func ruleK8sUnallocatedGPU(inst *models.GPUInstance) {
 			Type:       "idle",
 			Severity:   models.SeverityCritical,
 			Confidence: 0.9,
-			Evidence:   fmt.Sprintf("GPU node has %d GPU(s) but no pods requesting GPUs for %.0f+ hours.", inst.GPUCount, inst.UptimeHours),
+			Evidence:   fmt.Sprintf("GPU node has %d GPU(s) but no pods requesting GPUs. Node up for %d days.", inst.GPUCount, int(inst.UptimeHours/24)),
 		})
 		inst.Recommendations = append(inst.Recommendations, models.Recommendation{
 			Action:             models.ActionTerminate,
-			Description:        fmt.Sprintf("No GPU pods scheduled on this node for %d days. Remove from node pool or scale down.", int(inst.UptimeHours/24)),
+			Description:        fmt.Sprintf("Node up %d days with 0 GPU pods scheduled. Remove from node pool or scale down.", int(inst.UptimeHours/24)),
 			CurrentMonthlyCost: inst.MonthlyCost,
 			MonthlySavings:     inst.MonthlyCost,
 			SavingsPercent:     100,

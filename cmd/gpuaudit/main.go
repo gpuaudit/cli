@@ -13,12 +13,13 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/gpuaudit/cli/internal/models"
 	"github.com/gpuaudit/cli/internal/analysis"
-	awsprovider "github.com/gpuaudit/cli/internal/providers/aws"
-	k8sprovider "github.com/gpuaudit/cli/internal/providers/k8s"
+	"github.com/gpuaudit/cli/internal/diff"
+	"github.com/gpuaudit/cli/internal/models"
 	"github.com/gpuaudit/cli/internal/output"
 	"github.com/gpuaudit/cli/internal/pricing"
+	awsprovider "github.com/gpuaudit/cli/internal/providers/aws"
+	k8sprovider "github.com/gpuaudit/cli/internal/providers/k8s"
 )
 
 var version = "dev"
@@ -53,6 +54,17 @@ var (
 	scanMinUptimeDays int
 )
 
+// --- diff command ---
+
+var diffFormat string
+
+var diffCmd = &cobra.Command{
+	Use:   "diff <old.json> <new.json>",
+	Short: "Compare two scan results and show what changed",
+	Args:  cobra.ExactArgs(2),
+	RunE:  runDiff,
+}
+
 var scanCmd = &cobra.Command{
 	Use:   "scan",
 	Short: "Scan AWS account for GPU waste",
@@ -74,7 +86,10 @@ func init() {
 	scanCmd.Flags().StringSliceVar(&scanExcludeTags, "exclude-tag", nil, "Exclude instances matching tag (key=value, repeatable)")
 	scanCmd.Flags().IntVar(&scanMinUptimeDays, "min-uptime-days", 0, "Only flag instances running for at least this many days")
 
+	diffCmd.Flags().StringVar(&diffFormat, "format", "table", "Output format: table, json")
+
 	rootCmd.AddCommand(scanCmd)
+	rootCmd.AddCommand(diffCmd)
 	rootCmd.AddCommand(pricingCmd)
 	rootCmd.AddCommand(iamPolicyCmd)
 	rootCmd.AddCommand(versionCmd)
@@ -142,6 +157,40 @@ func runScan(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+func runDiff(cmd *cobra.Command, args []string) error {
+	old, err := loadScanResult(args[0])
+	if err != nil {
+		return fmt.Errorf("loading old scan: %w", err)
+	}
+	new, err := loadScanResult(args[1])
+	if err != nil {
+		return fmt.Errorf("loading new scan: %w", err)
+	}
+
+	result := diff.Compare(old, new)
+
+	switch strings.ToLower(diffFormat) {
+	case "json":
+		return output.FormatDiffJSON(os.Stdout, result)
+	default:
+		output.FormatDiffTable(os.Stdout, result)
+	}
+
+	return nil
+}
+
+func loadScanResult(path string) (*models.ScanResult, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var result models.ScanResult
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, fmt.Errorf("parsing %s: %w", path, err)
+	}
+	return &result, nil
 }
 
 // --- pricing command ---
