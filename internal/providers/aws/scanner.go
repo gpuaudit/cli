@@ -231,46 +231,6 @@ func getGPURegions(ctx context.Context, cfg aws.Config) ([]string, error) {
 	}, nil
 }
 
-// BuildSummary computes aggregate statistics for a set of GPU instances.
-func BuildSummary(instances []models.GPUInstance) models.ScanSummary {
-	s := models.ScanSummary{
-		TotalInstances: len(instances),
-	}
-
-	for _, inst := range instances {
-		s.TotalMonthlyCost += inst.MonthlyCost
-		s.TotalEstimatedWaste += inst.EstimatedSavings
-
-		maxSeverity := models.Severity("")
-		for _, sig := range inst.WasteSignals {
-			if sig.Severity == models.SeverityCritical {
-				maxSeverity = models.SeverityCritical
-			} else if sig.Severity == models.SeverityWarning && maxSeverity != models.SeverityCritical {
-				maxSeverity = models.SeverityWarning
-			} else if sig.Severity == models.SeverityInfo && maxSeverity == "" {
-				maxSeverity = models.SeverityInfo
-			}
-		}
-
-		switch maxSeverity {
-		case models.SeverityCritical:
-			s.CriticalCount++
-		case models.SeverityWarning:
-			s.WarningCount++
-		case models.SeverityInfo:
-			s.InfoCount++
-		default:
-			s.HealthyCount++
-		}
-	}
-
-	if s.TotalMonthlyCost > 0 {
-		s.WastePercent = (s.TotalEstimatedWaste / s.TotalMonthlyCost) * 100
-	}
-
-	return s
-}
-
 func matchesExcludeTags(instanceTags map[string]string, excludes map[string]string) bool {
 	for k, v := range excludes {
 		if instanceTags[k] == v {
