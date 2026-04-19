@@ -104,3 +104,50 @@ func TestEnrichSpotPrices_EmptyInstances(t *testing.T) {
 	EnrichSpotPrices(context.Background(), client, nil)
 	EnrichSpotPrices(context.Background(), client, []models.GPUInstance{})
 }
+
+func TestEnrichSpotPrices_CorrectsCostForSpotInstances(t *testing.T) {
+	client := &mockSpotPriceClient{
+		prices: []ec2types.SpotPrice{
+			{
+				InstanceType: ec2types.InstanceTypeG5Xlarge,
+				SpotPrice:    aws.String("0.556"),
+				Timestamp:    aws.Time(time.Now()),
+			},
+		},
+	}
+	instances := []models.GPUInstance{
+		{
+			InstanceID:   "i-spot",
+			InstanceType: "g5.xlarge",
+			Source:       models.SourceEC2,
+			PricingModel: "spot",
+			HourlyCost:   1.006, // on-demand price (wrong for spot)
+			MonthlyCost:  1.006 * 730,
+		},
+		{
+			InstanceID:   "i-ondemand",
+			InstanceType: "g5.xlarge",
+			Source:       models.SourceEC2,
+			PricingModel: "on-demand",
+			HourlyCost:   1.006,
+			MonthlyCost:  1.006 * 730,
+		},
+	}
+
+	EnrichSpotPrices(context.Background(), client, instances)
+
+	// Spot instance should have corrected cost
+	if instances[0].HourlyCost != 0.556 {
+		t.Errorf("spot instance hourly cost: expected 0.556, got %f", instances[0].HourlyCost)
+	}
+	expectedMonthlyCost := 0.556 * 730
+	const epsilon = 0.0001
+	if instances[0].MonthlyCost < expectedMonthlyCost-epsilon || instances[0].MonthlyCost > expectedMonthlyCost+epsilon {
+		t.Errorf("spot instance monthly cost: expected %f, got %f", expectedMonthlyCost, instances[0].MonthlyCost)
+	}
+
+	// On-demand instance should keep original cost
+	if instances[1].HourlyCost != 1.006 {
+		t.Errorf("on-demand instance hourly cost should be unchanged, got %f", instances[1].HourlyCost)
+	}
+}
