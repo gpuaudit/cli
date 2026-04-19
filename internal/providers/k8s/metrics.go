@@ -85,7 +85,9 @@ func EnrichDCGMMetrics(ctx context.Context, client K8sClient, instances []models
 		}
 	}
 
-	fmt.Fprintf(os.Stderr, "  DCGM: got GPU metrics for %d of %d remaining nodes\n", enriched, len(needsMetrics))
+	if enriched > 0 {
+		fmt.Fprintf(os.Stderr, "  DCGM: got GPU metrics for %d of %d remaining nodes\n", enriched, len(needsMetrics))
+	}
 	return enriched
 }
 
