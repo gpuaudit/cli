@@ -86,10 +86,11 @@ type GPUInstance struct {
 	InvocationCount        *int64   `json:"invocation_count,omitempty"`
 
 	// Cost
-	PricingModel string  `json:"pricing_model"` // on-demand, spot, reserved, savings-plan
-	HourlyCost   float64 `json:"hourly_cost"`
-	MonthlyCost  float64 `json:"monthly_cost"`
-	MTDCost      *float64 `json:"mtd_cost,omitempty"`
+	PricingModel   string   `json:"pricing_model"` // on-demand, spot, reserved, savings-plan
+	HourlyCost     float64  `json:"hourly_cost"`
+	MonthlyCost    float64  `json:"monthly_cost"`
+	SpotHourlyCost *float64 `json:"spot_hourly_cost,omitempty"`
+	MTDCost        *float64 `json:"mtd_cost,omitempty"`
 
 	// Analysis results (populated by analysis engine)
 	WasteSignals    []WasteSignal    `json:"waste_signals,omitempty"`
