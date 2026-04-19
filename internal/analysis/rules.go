@@ -361,6 +361,9 @@ func ruleSpotEligible(inst *models.GPUInstance) {
 	if inst.SpotHourlyCost == nil {
 		return
 	}
+	if inst.HourlyCost <= 0 {
+		return
+	}
 
 	spotHourly := *inst.SpotHourlyCost
 	savingsPercent := ((inst.HourlyCost - spotHourly) / inst.HourlyCost) * 100

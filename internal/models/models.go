@@ -100,7 +100,7 @@ type GPUInstance struct {
 
 // WasteSignal represents a detected waste indicator on a GPU instance.
 type WasteSignal struct {
-	Type       string   `json:"type"` // idle, low_utilization, oversized_gpu, pricing_mismatch, stale, low_invocations
+	Type       string   `json:"type"` // idle, low_utilization, oversized_gpu, pricing_mismatch, stale, low_invocations, spot_eligible
 	Severity   Severity `json:"severity"`
 	Confidence float64  `json:"confidence"` // 0.0 - 1.0
 	Evidence   string   `json:"evidence"`
