@@ -17,8 +17,10 @@ import (
 )
 
 type mockK8sClient struct {
-	nodes *corev1.NodeList
-	pods  *corev1.PodList
+	nodes     *corev1.NodeList
+	pods      *corev1.PodList
+	proxyData map[string][]byte
+	proxyErr  error
 }
 
 func (m *mockK8sClient) ListNodes(ctx context.Context, opts metav1.ListOptions) (*corev1.NodeList, error) {
@@ -27,6 +29,17 @@ func (m *mockK8sClient) ListNodes(ctx context.Context, opts metav1.ListOptions) 
 
 func (m *mockK8sClient) ListPods(ctx context.Context, namespace string, opts metav1.ListOptions) (*corev1.PodList, error) {
 	return m.pods, nil
+}
+
+func (m *mockK8sClient) ProxyGet(ctx context.Context, namespace, podName, port, path string) ([]byte, error) {
+	if m.proxyErr != nil {
+		return nil, m.proxyErr
+	}
+	key := fmt.Sprintf("%s/%s:%s%s", namespace, podName, port, path)
+	if data, ok := m.proxyData[key]; ok {
+		return data, nil
+	}
+	return nil, fmt.Errorf("no mock data for %s", key)
 }
 
 func gpuNode(name, instanceType string, gpuCount int, ready bool, created time.Time) corev1.Node {
