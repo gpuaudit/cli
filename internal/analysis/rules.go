@@ -28,6 +28,7 @@ func analyzeInstance(inst *models.GPUInstance) {
 		ruleSageMakerLowUtil,
 		ruleSageMakerOversized,
 		ruleK8sUnallocatedGPU,
+		ruleSpotEligible,
 	}
 	for _, rule := range rules {
 		rule(inst)
@@ -346,4 +347,51 @@ func ruleK8sUnallocatedGPU(inst *models.GPUInstance) {
 			Risk:                   models.RiskMedium,
 		})
 	}
+}
+
+// Rule 8: On-demand instance eligible for Spot pricing.
+func ruleSpotEligible(inst *models.GPUInstance) {
+	if inst.PricingModel != "on-demand" {
+		return
+	}
+	if inst.UptimeHours < 24 {
+		return
+	}
+	if inst.SpotHourlyCost == nil {
+		return
+	}
+	if inst.HourlyCost <= 0 {
+		return
+	}
+
+	spotHourly := *inst.SpotHourlyCost
+	savingsPercent := ((inst.HourlyCost - spotHourly) / inst.HourlyCost) * 100
+	if savingsPercent <= 0 {
+		return
+	}
+
+	monthlySavings := (inst.HourlyCost - spotHourly) * 730
+	spotMonthlyCost := spotHourly * 730
+
+	// Higher savings → higher confidence
+	confidence := 0.35 + (savingsPercent / 120)
+	if confidence > 0.95 {
+		confidence = 0.95
+	}
+
+	inst.WasteSignals = append(inst.WasteSignals, models.WasteSignal{
+		Type:       "spot_eligible",
+		Severity:   models.SeverityInfo,
+		Confidence: confidence,
+		Evidence:   fmt.Sprintf("Spot pricing available at $%.3f/hr vs $%.3f/hr on-demand (%.0f%% savings).", spotHourly, inst.HourlyCost, savingsPercent),
+	})
+	inst.Recommendations = append(inst.Recommendations, models.Recommendation{
+		Action:                 models.ActionChangePricing,
+		Description:            fmt.Sprintf("Spot pricing available at $%.2f/hr (%.0f%% savings). Spot instances may be interrupted — suitable for fault-tolerant workloads.", spotHourly, savingsPercent),
+		CurrentMonthlyCost:     inst.MonthlyCost,
+		RecommendedMonthlyCost: spotMonthlyCost,
+		MonthlySavings:         monthlySavings,
+		SavingsPercent:         savingsPercent,
+		Risk:                   models.RiskHigh,
+	})
 }

@@ -85,10 +85,11 @@ type GPUInstance struct {
 	InvocationCount        *int64   `json:"invocation_count,omitempty"`
 
 	// Cost
-	PricingModel string  `json:"pricing_model"` // on-demand, spot, reserved, savings-plan
-	HourlyCost   float64 `json:"hourly_cost"`
-	MonthlyCost  float64 `json:"monthly_cost"`
-	MTDCost      *float64 `json:"mtd_cost,omitempty"`
+	PricingModel   string   `json:"pricing_model"` // on-demand, spot, reserved, savings-plan
+	HourlyCost     float64  `json:"hourly_cost"`
+	MonthlyCost    float64  `json:"monthly_cost"`
+	SpotHourlyCost *float64 `json:"spot_hourly_cost,omitempty"`
+	MTDCost        *float64 `json:"mtd_cost,omitempty"`
 
 	// Analysis results (populated by analysis engine)
 	WasteSignals    []WasteSignal    `json:"waste_signals,omitempty"`
@@ -98,7 +99,7 @@ type GPUInstance struct {
 
 // WasteSignal represents a detected waste indicator on a GPU instance.
 type WasteSignal struct {
-	Type       string   `json:"type"` // idle, low_utilization, oversized_gpu, pricing_mismatch, stale, low_invocations
+	Type       string   `json:"type"` // idle, low_utilization, oversized_gpu, pricing_mismatch, stale, low_invocations, spot_eligible
 	Severity   Severity `json:"severity"`
 	Confidence float64  `json:"confidence"` // 0.0 - 1.0
 	Evidence   string   `json:"evidence"`

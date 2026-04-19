@@ -270,6 +270,7 @@ func scanRegion(ctx context.Context, cfg aws.Config, accountID, region string, o
 			if err := EnrichEC2Metrics(ctx, cwClient, ec2Instances, opts.MetricWindow); err != nil {
 				fmt.Fprintf(os.Stderr, "  warning: could not enrich EC2 metrics in %s: %v\n", region, err)
 			}
+			EnrichSpotPrices(ctx, ec2Client, ec2Instances)
 		}
 		allInstances = append(allInstances, ec2Instances...)
 	}
