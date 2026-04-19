@@ -67,13 +67,20 @@ func EnrichSpotPrices(ctx context.Context, client SpotPriceClient, instances []m
 		latestPrice[itype] = price
 	}
 
-	// Populate SpotHourlyCost on matching instances.
+	// Populate SpotHourlyCost on matching instances and correct cost for
+	// instances already running as spot.
 	for i := range instances {
 		if instances[i].Source != models.SourceEC2 {
 			continue
 		}
-		if price, ok := latestPrice[instances[i].InstanceType]; ok {
-			instances[i].SpotHourlyCost = &price
+		price, ok := latestPrice[instances[i].InstanceType]
+		if !ok {
+			continue
+		}
+		instances[i].SpotHourlyCost = &price
+		if instances[i].PricingModel == "spot" {
+			instances[i].HourlyCost = price
+			instances[i].MonthlyCost = price * 730
 		}
 	}
 }
