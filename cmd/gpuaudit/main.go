@@ -13,6 +13,9 @@ import (
 
 	"github.com/spf13/cobra"
 
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
+
 	"github.com/gpuaudit/cli/internal/analysis"
 	"github.com/gpuaudit/cli/internal/diff"
 	"github.com/gpuaudit/cli/internal/models"
@@ -50,6 +53,8 @@ var (
 	scanSkipCosts     bool
 	scanKubeconfig    string
 	scanKubeContext   string
+	scanPromURL       string
+	scanPromEndpoint  string
 	scanExcludeTags   []string
 	scanMinUptimeDays int
 	scanTargets       []string
@@ -88,6 +93,8 @@ func init() {
 	scanCmd.Flags().BoolVar(&scanSkipCosts, "skip-costs", false, "Skip Cost Explorer data enrichment")
 	scanCmd.Flags().StringVar(&scanKubeconfig, "kubeconfig", "", "Path to kubeconfig file (default: ~/.kube/config)")
 	scanCmd.Flags().StringVar(&scanKubeContext, "kube-context", "", "Kubernetes context to use (default: current context)")
+	scanCmd.Flags().StringVar(&scanPromURL, "prom-url", "", "Prometheus URL for GPU metrics (e.g., https://prometheus.corp.example.com)")
+	scanCmd.Flags().StringVar(&scanPromEndpoint, "prom-endpoint", "", "In-cluster Prometheus service as namespace/service:port (e.g., monitoring/prometheus:9090)")
 	scanCmd.Flags().StringSliceVar(&scanExcludeTags, "exclude-tag", nil, "Exclude instances matching tag (key=value, repeatable)")
 	scanCmd.Flags().IntVar(&scanMinUptimeDays, "min-uptime-days", 0, "Only flag instances running for at least this many days")
 	scanCmd.Flags().StringSliceVar(&scanTargets, "targets", nil, "Account IDs to scan (comma-separated)")
@@ -107,6 +114,10 @@ func init() {
 }
 
 func runScan(cmd *cobra.Command, args []string) error {
+	if scanPromURL != "" && scanPromEndpoint != "" {
+		return fmt.Errorf("--prom-url and --prom-endpoint are mutually exclusive")
+	}
+
 	ctx := context.Background()
 
 	if (len(scanTargets) > 0 || scanOrg) && scanRole == "" {
@@ -128,8 +139,10 @@ func runScan(cmd *cobra.Command, args []string) error {
 	opts.OrgScan = scanOrg
 	opts.SkipSelf = scanSkipSelf
 
+	awsAvailable := true
 	result, err := awsprovider.Scan(ctx, opts)
 	if err != nil {
+		awsAvailable = false
 		if scanSkipK8s {
 			return fmt.Errorf("scan failed: %w", err)
 		}
@@ -141,13 +154,18 @@ func runScan(cmd *cobra.Command, args []string) error {
 	// Kubernetes API scan
 	if !scanSkipK8s {
 		k8sOpts := k8sprovider.ScanOptions{
-			Kubeconfig: scanKubeconfig,
-			Context:    scanKubeContext,
+			Kubeconfig:   scanKubeconfig,
+			Context:      scanKubeContext,
+			PromURL:      scanPromURL,
+			PromEndpoint: scanPromEndpoint,
 		}
 		k8sInstances, err := k8sprovider.Scan(ctx, k8sOpts)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "  warning: Kubernetes scan failed: %v\n", err)
 		} else if len(k8sInstances) > 0 {
+			if !scanSkipMetrics {
+				enrichK8sGPUMetrics(ctx, k8sInstances, k8sOpts, opts, awsAvailable)
+			}
 			analysis.AnalyzeAll(k8sInstances)
 			result.Instances = append(result.Instances, k8sInstances...)
 			result.Summary = awsprovider.BuildSummary(result.Instances)
@@ -382,4 +400,61 @@ func parseExcludeTags(raw []string) map[string]string {
 		}
 	}
 	return tags
+}
+
+func enrichK8sGPUMetrics(ctx context.Context, instances []models.GPUInstance, k8sOpts k8sprovider.ScanOptions, awsOpts awsprovider.ScanOptions, awsAvailable bool) {
+	// Source 1: CloudWatch Container Insights (skip if AWS creds unavailable)
+	if awsAvailable && len(instances) > 0 && instances[0].ClusterName != "" {
+		cfgOpts := []func(*awsconfig.LoadOptions) error{}
+		if awsOpts.Profile != "" {
+			cfgOpts = append(cfgOpts, awsconfig.WithSharedConfigProfile(awsOpts.Profile))
+		}
+		cfg, err := awsconfig.LoadDefaultConfig(ctx, cfgOpts...)
+		if err == nil {
+			region := instances[0].Region
+			if region == "" {
+				region = "us-east-1"
+			}
+			cfg.Region = region
+			cwClient := cloudwatch.NewFromConfig(cfg)
+			fmt.Fprintf(os.Stderr, "  Enriching K8s GPU metrics via CloudWatch Container Insights...\n")
+			awsprovider.EnrichK8sGPUMetrics(ctx, cwClient, instances, instances[0].ClusterName, awsprovider.DefaultMetricWindow)
+		}
+	}
+
+	// Source 2: DCGM exporter scrape
+	remaining := 0
+	for _, inst := range instances {
+		if inst.Source == models.SourceK8sNode && inst.AvgGPUUtilization == nil {
+			remaining++
+		}
+	}
+	if remaining > 0 {
+		client, _, err := k8sprovider.BuildClientPublic(k8sOpts.Kubeconfig, k8sOpts.Context)
+		if err == nil {
+			k8sprovider.EnrichDCGMMetrics(ctx, client, instances)
+		}
+	}
+
+	// Source 3: Prometheus query
+	remaining = 0
+	for _, inst := range instances {
+		if inst.Source == models.SourceK8sNode && inst.AvgGPUUtilization == nil {
+			remaining++
+		}
+	}
+	if remaining > 0 && (k8sOpts.PromURL != "" || k8sOpts.PromEndpoint != "") {
+		var client k8sprovider.K8sClient
+		if k8sOpts.PromEndpoint != "" {
+			c, _, err := k8sprovider.BuildClientPublic(k8sOpts.Kubeconfig, k8sOpts.Context)
+			if err == nil {
+				client = c
+			}
+		}
+		promOpts := k8sprovider.PrometheusOptions{
+			URL:      k8sOpts.PromURL,
+			Endpoint: k8sOpts.PromEndpoint,
+		}
+		k8sprovider.EnrichPrometheusMetrics(ctx, client, instances, promOpts)
+	}
 }

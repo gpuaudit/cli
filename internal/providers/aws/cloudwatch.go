@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -77,6 +78,69 @@ func EnrichSageMakerMetrics(ctx context.Context, client CloudWatchClient, instan
 		inst.InvocationCount = intPtrFromFloat(metrics["sum_invocations"])
 	}
 	return nil
+}
+
+// EnrichK8sGPUMetrics populates GPU utilization metrics on K8s nodes using CloudWatch Container Insights.
+func EnrichK8sGPUMetrics(ctx context.Context, client CloudWatchClient, instances []models.GPUInstance, clusterName string, window MetricWindow) {
+	type nodeRef struct {
+		index      int
+		instanceID string
+	}
+	var nodes []nodeRef
+	for i := range instances {
+		inst := &instances[i]
+		if inst.Source != models.SourceK8sNode {
+			continue
+		}
+		if inst.AvgGPUUtilization != nil {
+			continue
+		}
+		if !strings.HasPrefix(inst.InstanceID, "i-") {
+			continue
+		}
+		nodes = append(nodes, nodeRef{index: i, instanceID: inst.InstanceID})
+	}
+	if len(nodes) == 0 {
+		return
+	}
+
+	now := time.Now()
+	start := now.Add(-window.Duration)
+
+	clusterDim := cwtypes.Dimension{
+		Name:  aws.String("ClusterName"),
+		Value: aws.String(clusterName),
+	}
+
+	enriched := 0
+	for _, node := range nodes {
+		instanceDim := cwtypes.Dimension{
+			Name:  aws.String("InstanceId"),
+			Value: aws.String(node.instanceID),
+		}
+
+		safeID := strings.ReplaceAll(node.instanceID, "-", "_")
+
+		queries := []cwtypes.MetricDataQuery{
+			metricQuery2("gpu_util_"+safeID, "ContainerInsights", "node_gpu_utilization", "Average", window.Period, clusterDim, instanceDim),
+			metricQuery2("gpu_mem_"+safeID, "ContainerInsights", "node_gpu_memory_utilization", "Average", window.Period, clusterDim, instanceDim),
+		}
+
+		results, err := fetchMetrics(ctx, client, queries, start, now)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "  warning: Container Insights metrics unavailable: %v\n", err)
+			break
+		}
+
+		if results["gpu_util_"+safeID] != nil {
+			instances[node.index].AvgGPUUtilization = results["gpu_util_"+safeID]
+			instances[node.index].AvgGPUMemUtilization = results["gpu_mem_"+safeID]
+			enriched++
+		}
+	}
+	if enriched > 0 {
+		fmt.Fprintf(os.Stderr, "  CloudWatch: got GPU metrics for %d of %d nodes\n", enriched, len(nodes))
+	}
 }
 
 func getEC2Metrics(ctx context.Context, client CloudWatchClient, instanceID string, window MetricWindow) (map[string]*float64, error) {

@@ -29,6 +29,7 @@ func analyzeInstance(inst *models.GPUInstance) {
 		ruleSageMakerOversized,
 		ruleK8sUnallocatedGPU,
 		ruleSpotEligible,
+		ruleK8sLowGPUUtil,
 	}
 	for _, rule := range rules {
 		rule(inst)
@@ -393,5 +394,34 @@ func ruleSpotEligible(inst *models.GPUInstance) {
 		MonthlySavings:         monthlySavings,
 		SavingsPercent:         savingsPercent,
 		Risk:                   models.RiskHigh,
+	})
+}
+
+// Rule 9: K8s GPU node with low GPU utilization (requires DCGM/CW/Prometheus metrics).
+func ruleK8sLowGPUUtil(inst *models.GPUInstance) {
+	if inst.Source != models.SourceK8sNode {
+		return
+	}
+	if inst.AvgGPUUtilization == nil {
+		return
+	}
+	if *inst.AvgGPUUtilization >= 10 {
+		return
+	}
+
+	inst.WasteSignals = append(inst.WasteSignals, models.WasteSignal{
+		Type:       "low_utilization",
+		Severity:   models.SeverityCritical,
+		Confidence: 0.85,
+		Evidence:   fmt.Sprintf("K8s GPU node utilization averaging %.1f%% over the past 7 days. GPUs are allocated but barely used.", *inst.AvgGPUUtilization),
+	})
+	inst.Recommendations = append(inst.Recommendations, models.Recommendation{
+		Action:                 models.ActionDownsize,
+		Description:            fmt.Sprintf("GPU utilization averaging %.1f%% over the past 7 days. Consider bin-packing more workloads, downsizing, or removing from the node pool.", *inst.AvgGPUUtilization),
+		CurrentMonthlyCost:     inst.MonthlyCost,
+		RecommendedMonthlyCost: inst.MonthlyCost * 0.2,
+		MonthlySavings:         inst.MonthlyCost * 0.8,
+		SavingsPercent:         80,
+		Risk:                   models.RiskMedium,
 	})
 }

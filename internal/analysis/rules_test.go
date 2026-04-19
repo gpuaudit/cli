@@ -342,9 +342,9 @@ func TestRuleSpotEligible_SkipsWhenNoSpotPrice(t *testing.T) {
 
 func TestRuleSpotEligible_ConfidenceScalesWithSavings(t *testing.T) {
 	tests := []struct {
-		name         string
-		onDemand     float64
-		spotPrice    float64
+		name          string
+		onDemand      float64
+		spotPrice     float64
 		minConfidence float64
 	}{
 		{"large_savings_60pct", 1.0, 0.4, 0.85},
@@ -371,5 +371,80 @@ func TestRuleSpotEligible_ConfidenceScalesWithSavings(t *testing.T) {
 				t.Errorf("expected confidence >= %.2f, got %.2f", tt.minConfidence, inst.WasteSignals[0].Confidence)
 			}
 		})
+	}
+}
+
+func TestRuleK8sLowGPUUtil_FlagsLowUtilization(t *testing.T) {
+	inst := models.GPUInstance{
+		InstanceID:        "i-node1",
+		Source:            models.SourceK8sNode,
+		State:             "ready",
+		InstanceType:      "g5.xlarge",
+		GPUModel:          "A10G",
+		GPUCount:          1,
+		GPUAllocated:      1,
+		MonthlyCost:       734,
+		AvgGPUUtilization: ptr(3.5),
+	}
+
+	ruleK8sLowGPUUtil(&inst)
+
+	if len(inst.WasteSignals) != 1 {
+		t.Fatalf("expected 1 signal, got %d", len(inst.WasteSignals))
+	}
+	if inst.WasteSignals[0].Type != "low_utilization" {
+		t.Errorf("expected low_utilization, got %s", inst.WasteSignals[0].Type)
+	}
+	if inst.WasteSignals[0].Severity != models.SeverityCritical {
+		t.Errorf("expected critical, got %s", inst.WasteSignals[0].Severity)
+	}
+	if inst.WasteSignals[0].Confidence != 0.85 {
+		t.Errorf("expected confidence 0.85, got %f", inst.WasteSignals[0].Confidence)
+	}
+	if len(inst.Recommendations) != 1 {
+		t.Fatalf("expected 1 recommendation, got %d", len(inst.Recommendations))
+	}
+	if inst.Recommendations[0].MonthlySavings != 734*0.8 {
+		t.Errorf("expected savings %.0f, got %f", 734*0.8, inst.Recommendations[0].MonthlySavings)
+	}
+}
+
+func TestRuleK8sLowGPUUtil_SkipsNonK8s(t *testing.T) {
+	inst := models.GPUInstance{
+		Source:            models.SourceEC2,
+		AvgGPUUtilization: ptr(3.5),
+	}
+
+	ruleK8sLowGPUUtil(&inst)
+
+	if len(inst.WasteSignals) != 0 {
+		t.Errorf("expected no signals for EC2 instance")
+	}
+}
+
+func TestRuleK8sLowGPUUtil_SkipsNoMetrics(t *testing.T) {
+	inst := models.GPUInstance{
+		Source: models.SourceK8sNode,
+		State:  "ready",
+	}
+
+	ruleK8sLowGPUUtil(&inst)
+
+	if len(inst.WasteSignals) != 0 {
+		t.Errorf("expected no signals when metrics unavailable")
+	}
+}
+
+func TestRuleK8sLowGPUUtil_SkipsHighUtilization(t *testing.T) {
+	inst := models.GPUInstance{
+		Source:            models.SourceK8sNode,
+		State:             "ready",
+		AvgGPUUtilization: ptr(45.0),
+	}
+
+	ruleK8sLowGPUUtil(&inst)
+
+	if len(inst.WasteSignals) != 0 {
+		t.Errorf("expected no signals for well-utilized GPU")
 	}
 }
