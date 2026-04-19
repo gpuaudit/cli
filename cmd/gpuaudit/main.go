@@ -104,8 +104,10 @@ func runScan(cmd *cobra.Command, args []string) error {
 	opts.ExcludeTags = parseExcludeTags(scanExcludeTags)
 	opts.MinUptimeDays = scanMinUptimeDays
 
+	awsAvailable := true
 	result, err := awsprovider.Scan(ctx, opts)
 	if err != nil {
+		awsAvailable = false
 		if scanSkipK8s {
 			return fmt.Errorf("scan failed: %w", err)
 		}
@@ -127,7 +129,7 @@ func runScan(cmd *cobra.Command, args []string) error {
 			fmt.Fprintf(os.Stderr, "  warning: Kubernetes scan failed: %v\n", err)
 		} else if len(k8sInstances) > 0 {
 			if !scanSkipMetrics {
-				enrichK8sGPUMetrics(ctx, k8sInstances, k8sOpts, opts)
+				enrichK8sGPUMetrics(ctx, k8sInstances, k8sOpts, opts, awsAvailable)
 			}
 			analysis.AnalyzeAll(k8sInstances)
 			result.Instances = append(result.Instances, k8sInstances...)
@@ -317,9 +319,9 @@ func parseExcludeTags(raw []string) map[string]string {
 	return tags
 }
 
-func enrichK8sGPUMetrics(ctx context.Context, instances []models.GPUInstance, k8sOpts k8sprovider.ScanOptions, awsOpts awsprovider.ScanOptions) {
-	// Source 1: CloudWatch Container Insights
-	if len(instances) > 0 && instances[0].ClusterName != "" {
+func enrichK8sGPUMetrics(ctx context.Context, instances []models.GPUInstance, k8sOpts k8sprovider.ScanOptions, awsOpts awsprovider.ScanOptions, awsAvailable bool) {
+	// Source 1: CloudWatch Container Insights (skip if AWS creds unavailable)
+	if awsAvailable && len(instances) > 0 && instances[0].ClusterName != "" {
 		cfgOpts := []func(*awsconfig.LoadOptions) error{}
 		if awsOpts.Profile != "" {
 			cfgOpts = append(cfgOpts, awsconfig.WithSharedConfigProfile(awsOpts.Profile))
