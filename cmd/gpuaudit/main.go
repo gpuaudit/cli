@@ -17,6 +17,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 
 	"github.com/gpuaudit/cli/internal/analysis"
+	"github.com/gpuaudit/cli/internal/diff"
 	"github.com/gpuaudit/cli/internal/models"
 	"github.com/gpuaudit/cli/internal/output"
 	"github.com/gpuaudit/cli/internal/pricing"
@@ -56,7 +57,23 @@ var (
 	scanPromEndpoint  string
 	scanExcludeTags   []string
 	scanMinUptimeDays int
+	scanTargets       []string
+	scanRole          string
+	scanExternalID    string
+	scanOrg           bool
+	scanSkipSelf      bool
 )
+
+// --- diff command ---
+
+var diffFormat string
+
+var diffCmd = &cobra.Command{
+	Use:   "diff <old.json> <new.json>",
+	Short: "Compare two scan results and show what changed",
+	Args:  cobra.ExactArgs(2),
+	RunE:  runDiff,
+}
 
 var scanCmd = &cobra.Command{
 	Use:   "scan",
@@ -80,8 +97,17 @@ func init() {
 	scanCmd.Flags().StringVar(&scanPromEndpoint, "prom-endpoint", "", "In-cluster Prometheus service as namespace/service:port (e.g., monitoring/prometheus:9090)")
 	scanCmd.Flags().StringSliceVar(&scanExcludeTags, "exclude-tag", nil, "Exclude instances matching tag (key=value, repeatable)")
 	scanCmd.Flags().IntVar(&scanMinUptimeDays, "min-uptime-days", 0, "Only flag instances running for at least this many days")
+	scanCmd.Flags().StringSliceVar(&scanTargets, "targets", nil, "Account IDs to scan (comma-separated)")
+	scanCmd.Flags().StringVar(&scanRole, "role", "", "IAM role name to assume in each target")
+	scanCmd.Flags().StringVar(&scanExternalID, "external-id", "", "STS external ID for cross-account role assumption")
+	scanCmd.Flags().BoolVar(&scanOrg, "org", false, "Auto-discover all accounts from AWS Organizations")
+	scanCmd.Flags().BoolVar(&scanSkipSelf, "skip-self", false, "Exclude the caller's own account from the scan")
+	scanCmd.MarkFlagsMutuallyExclusive("targets", "org")
+
+	diffCmd.Flags().StringVar(&diffFormat, "format", "table", "Output format: table, json")
 
 	rootCmd.AddCommand(scanCmd)
+	rootCmd.AddCommand(diffCmd)
 	rootCmd.AddCommand(pricingCmd)
 	rootCmd.AddCommand(iamPolicyCmd)
 	rootCmd.AddCommand(versionCmd)
@@ -94,6 +120,10 @@ func runScan(cmd *cobra.Command, args []string) error {
 
 	ctx := context.Background()
 
+	if (len(scanTargets) > 0 || scanOrg) && scanRole == "" {
+		return fmt.Errorf("--role is required when using --targets or --org")
+	}
+
 	opts := awsprovider.DefaultScanOptions()
 	opts.Profile = scanProfile
 	opts.Regions = scanRegions
@@ -103,6 +133,11 @@ func runScan(cmd *cobra.Command, args []string) error {
 	opts.SkipCosts = scanSkipCosts
 	opts.ExcludeTags = parseExcludeTags(scanExcludeTags)
 	opts.MinUptimeDays = scanMinUptimeDays
+	opts.Targets = scanTargets
+	opts.Role = scanRole
+	opts.ExternalID = scanExternalID
+	opts.OrgScan = scanOrg
+	opts.SkipSelf = scanSkipSelf
 
 	awsAvailable := true
 	result, err := awsprovider.Scan(ctx, opts)
@@ -160,6 +195,40 @@ func runScan(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+func runDiff(cmd *cobra.Command, args []string) error {
+	old, err := loadScanResult(args[0])
+	if err != nil {
+		return fmt.Errorf("loading old scan: %w", err)
+	}
+	new, err := loadScanResult(args[1])
+	if err != nil {
+		return fmt.Errorf("loading new scan: %w", err)
+	}
+
+	result := diff.Compare(old, new)
+
+	switch strings.ToLower(diffFormat) {
+	case "json":
+		return output.FormatDiffJSON(os.Stdout, result)
+	default:
+		output.FormatDiffTable(os.Stdout, result)
+	}
+
+	return nil
+}
+
+func loadScanResult(path string) (*models.ScanResult, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var result models.ScanResult
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, fmt.Errorf("parsing %s: %w", path, err)
+	}
+	return &result, nil
 }
 
 // --- pricing command ---
@@ -240,6 +309,7 @@ var iamPolicyCmd = &cobra.Command{
 						"ec2:DescribeInstances",
 						"ec2:DescribeInstanceTypes",
 						"ec2:DescribeRegions",
+						"ec2:DescribeSpotPriceHistory",
 					},
 					"Resource": "*",
 				},
@@ -291,8 +361,21 @@ var iamPolicyCmd = &cobra.Command{
 					},
 					"Resource": "*",
 				},
+				{
+					"Sid":      "GPUAuditCrossAccount",
+					"Effect":   "Allow",
+					"Action":   "sts:AssumeRole",
+					"Resource": "arn:aws:iam::*:role/gpuaudit-reader",
+				},
+				{
+					"Sid":      "GPUAuditOrganizations",
+					"Effect":   "Allow",
+					"Action":   "organizations:ListAccounts",
+					"Resource": "*",
+				},
 			},
 		}
+		fmt.Fprintln(os.Stdout, "// The last two statements (CrossAccount, Organizations) are only needed for --targets or --org scanning.")
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
 		enc.Encode(policy)
