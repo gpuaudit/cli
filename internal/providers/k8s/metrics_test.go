@@ -50,7 +50,7 @@ func TestEnrichDCGMMetrics_PopulatesUtilization(t *testing.T) {
 		nodes: &corev1.NodeList{},
 		pods: &corev1.PodList{
 			Items: []corev1.Pod{
-				dcgmPod("dcgm-exporter-abc", "gpu-operator", "i-node1"),
+				dcgmPod("dcgm-exporter-abc", "gpu-operator", "ip-10-22-1-100.ec2.internal"),
 			},
 		},
 		proxyData: map[string][]byte{
@@ -58,7 +58,7 @@ func TestEnrichDCGMMetrics_PopulatesUtilization(t *testing.T) {
 		},
 	}
 	instances := []models.GPUInstance{
-		{InstanceID: "i-node1", Source: models.SourceK8sNode, Name: "cluster/i-node1"},
+		{InstanceID: "i-abc123", K8sNodeName: "ip-10-22-1-100.ec2.internal", Source: models.SourceK8sNode, Name: "cluster/ip-10-22-1-100"},
 	}
 
 	enriched := EnrichDCGMMetrics(context.Background(), client, instances)
@@ -86,7 +86,7 @@ func TestEnrichDCGMMetrics_SkipsAlreadyEnriched(t *testing.T) {
 		nodes: &corev1.NodeList{},
 		pods: &corev1.PodList{
 			Items: []corev1.Pod{
-				dcgmPod("dcgm-exporter-abc", "gpu-operator", "i-node1"),
+				dcgmPod("dcgm-exporter-abc", "gpu-operator", "node1"),
 			},
 		},
 		proxyData: map[string][]byte{
@@ -94,7 +94,7 @@ func TestEnrichDCGMMetrics_SkipsAlreadyEnriched(t *testing.T) {
 		},
 	}
 	instances := []models.GPUInstance{
-		{InstanceID: "i-node1", Source: models.SourceK8sNode, AvgGPUUtilization: &gpuUtil},
+		{InstanceID: "i-abc123", K8sNodeName: "node1", Source: models.SourceK8sNode, AvgGPUUtilization: &gpuUtil},
 	}
 
 	enriched := EnrichDCGMMetrics(context.Background(), client, instances)
@@ -131,13 +131,13 @@ func TestEnrichDCGMMetrics_HandlesScrapeError(t *testing.T) {
 		nodes: &corev1.NodeList{},
 		pods: &corev1.PodList{
 			Items: []corev1.Pod{
-				dcgmPod("dcgm-exporter-abc", "gpu-operator", "i-node1"),
+				dcgmPod("dcgm-exporter-abc", "gpu-operator", "node1"),
 			},
 		},
 		proxyErr: fmt.Errorf("connection refused"),
 	}
 	instances := []models.GPUInstance{
-		{InstanceID: "i-node1", Source: models.SourceK8sNode},
+		{InstanceID: "node1", Source: models.SourceK8sNode},
 	}
 
 	enriched := EnrichDCGMMetrics(context.Background(), client, instances)

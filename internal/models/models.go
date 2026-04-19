@@ -66,6 +66,7 @@ type GPUInstance struct {
 
 	// Kubernetes (populated for k8s-node source)
 	ClusterName  string `json:"cluster_name,omitempty"`
+	K8sNodeName  string `json:"k8s_node_name,omitempty"`
 	GPUAllocated int    `json:"gpu_allocated,omitempty"`
 
 	// State
