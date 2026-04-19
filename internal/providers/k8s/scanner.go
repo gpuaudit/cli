@@ -19,8 +19,10 @@ import (
 
 // ScanOptions controls Kubernetes GPU scanning.
 type ScanOptions struct {
-	Kubeconfig string
-	Context    string
+	Kubeconfig   string
+	Context      string
+	PromURL      string
+	PromEndpoint string
 }
 
 // Scan discovers GPU nodes in Kubernetes clusters accessible via kubeconfig.
@@ -45,6 +47,11 @@ func Scan(ctx context.Context, opts ScanOptions) ([]models.GPUInstance, error) {
 	}
 
 	return instances, nil
+}
+
+// BuildClientPublic builds a K8s client and returns the cluster name.
+func BuildClientPublic(kubeconfigPath, contextName string) (K8sClient, string, error) {
+	return buildClient(kubeconfigPath, contextName)
 }
 
 func buildClient(kubeconfigPath, contextName string) (K8sClient, string, error) {
