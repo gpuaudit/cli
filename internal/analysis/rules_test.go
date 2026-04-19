@@ -260,6 +260,120 @@ func TestAnalyzeAll_ComputesSavings(t *testing.T) {
 	}
 }
 
+func TestRuleSpotEligible_FlagsOnDemandWithSpotPrice(t *testing.T) {
+	spotPrice := 0.556
+	inst := models.GPUInstance{
+		InstanceID:     "i-test",
+		Source:         models.SourceEC2,
+		PricingModel:   "on-demand",
+		UptimeHours:    48,
+		HourlyCost:     1.006,
+		MonthlyCost:    1.006 * 730,
+		SpotHourlyCost: &spotPrice,
+	}
+
+	ruleSpotEligible(&inst)
+
+	if len(inst.WasteSignals) != 1 {
+		t.Fatalf("expected 1 signal, got %d", len(inst.WasteSignals))
+	}
+	if inst.WasteSignals[0].Type != "spot_eligible" {
+		t.Errorf("expected spot_eligible, got %s", inst.WasteSignals[0].Type)
+	}
+	if inst.WasteSignals[0].Severity != models.SeverityInfo {
+		t.Errorf("expected info severity, got %s", inst.WasteSignals[0].Severity)
+	}
+	if len(inst.Recommendations) != 1 {
+		t.Fatalf("expected 1 recommendation, got %d", len(inst.Recommendations))
+	}
+	if inst.Recommendations[0].Action != models.ActionChangePricing {
+		t.Errorf("expected change_pricing, got %s", inst.Recommendations[0].Action)
+	}
+	expectedSavings := (1.006 - 0.556) * 730
+	diff := inst.Recommendations[0].MonthlySavings - expectedSavings
+	if diff < -0.01 || diff > 0.01 {
+		t.Errorf("expected savings %.2f, got %.2f", expectedSavings, inst.Recommendations[0].MonthlySavings)
+	}
+}
+
+func TestRuleSpotEligible_SkipsSpotInstances(t *testing.T) {
+	spotPrice := 0.556
+	inst := models.GPUInstance{
+		PricingModel:   "spot",
+		UptimeHours:    48,
+		SpotHourlyCost: &spotPrice,
+	}
+
+	ruleSpotEligible(&inst)
+
+	if len(inst.WasteSignals) != 0 {
+		t.Errorf("expected no signals for spot instance, got %d", len(inst.WasteSignals))
+	}
+}
+
+func TestRuleSpotEligible_SkipsRecentInstances(t *testing.T) {
+	spotPrice := 0.556
+	inst := models.GPUInstance{
+		PricingModel:   "on-demand",
+		UptimeHours:    12,
+		SpotHourlyCost: &spotPrice,
+	}
+
+	ruleSpotEligible(&inst)
+
+	if len(inst.WasteSignals) != 0 {
+		t.Errorf("expected no signals for recent instance, got %d", len(inst.WasteSignals))
+	}
+}
+
+func TestRuleSpotEligible_SkipsWhenNoSpotPrice(t *testing.T) {
+	inst := models.GPUInstance{
+		PricingModel:   "on-demand",
+		UptimeHours:    48,
+		SpotHourlyCost: nil,
+	}
+
+	ruleSpotEligible(&inst)
+
+	if len(inst.WasteSignals) != 0 {
+		t.Errorf("expected no signals when spot price unavailable, got %d", len(inst.WasteSignals))
+	}
+}
+
+func TestRuleSpotEligible_ConfidenceScalesWithSavings(t *testing.T) {
+	tests := []struct {
+		name          string
+		onDemand      float64
+		spotPrice     float64
+		minConfidence float64
+	}{
+		{"large_savings_60pct", 1.0, 0.4, 0.85},
+		{"moderate_savings_40pct", 1.0, 0.6, 0.65},
+		{"small_savings_20pct", 1.0, 0.8, 0.5},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			inst := models.GPUInstance{
+				PricingModel:   "on-demand",
+				UptimeHours:    48,
+				HourlyCost:     tt.onDemand,
+				MonthlyCost:    tt.onDemand * 730,
+				SpotHourlyCost: &tt.spotPrice,
+			}
+
+			ruleSpotEligible(&inst)
+
+			if len(inst.WasteSignals) == 0 {
+				t.Fatal("expected signal")
+			}
+			if inst.WasteSignals[0].Confidence < tt.minConfidence {
+				t.Errorf("expected confidence >= %.2f, got %.2f", tt.minConfidence, inst.WasteSignals[0].Confidence)
+			}
+		})
+	}
+}
+
 func TestRuleK8sLowGPUUtil_FlagsLowUtilization(t *testing.T) {
 	inst := models.GPUInstance{
 		InstanceID:        "i-node1",
