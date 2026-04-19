@@ -100,6 +100,10 @@ func (w *k8sClientWrapper) ListPods(ctx context.Context, namespace string, opts 
 	return w.clientset.CoreV1().Pods(namespace).List(ctx, opts)
 }
 
+func (w *k8sClientWrapper) ProxyGet(ctx context.Context, namespace, podName, port, path string) ([]byte, error) {
+	return w.clientset.CoreV1().Pods(namespace).ProxyGet("http", podName, port, path, nil).DoRaw(ctx)
+}
+
 func defaultKubeconfig() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
