@@ -56,6 +56,7 @@ func EnrichDCGMMetrics(ctx context.Context, client K8sClient, instances []models
 	fmt.Fprintf(os.Stderr, "  Probing DCGM exporter on GPU nodes...\n")
 
 	enriched := 0
+	scrapeErrors := 0
 	for _, pod := range dcgmPods {
 		idx, ok := needsMetrics[pod.Spec.NodeName]
 		if !ok {
@@ -64,7 +65,14 @@ func EnrichDCGMMetrics(ctx context.Context, client K8sClient, instances []models
 
 		data, err := client.ProxyGet(ctx, pod.Namespace, pod.Name, "9400", "/metrics")
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "  warning: DCGM scrape failed for %s: %v\n", pod.Spec.NodeName, err)
+			scrapeErrors++
+			if scrapeErrors == 1 {
+				fmt.Fprintf(os.Stderr, "  warning: DCGM scrape failed: %v\n", err)
+			}
+			if scrapeErrors >= 3 {
+				fmt.Fprintf(os.Stderr, "  warning: DCGM scrape failing consistently, skipping remaining nodes\n")
+				break
+			}
 			continue
 		}
 
@@ -73,6 +81,7 @@ func EnrichDCGMMetrics(ctx context.Context, client K8sClient, instances []models
 			instances[idx].AvgGPUUtilization = gpuUtil
 			instances[idx].AvgGPUMemUtilization = memUtil
 			enriched++
+			scrapeErrors = 0
 		}
 	}
 
@@ -164,7 +173,11 @@ func EnrichPrometheusMetrics(ctx context.Context, client K8sClient, instances []
 		if inst.Source != models.SourceK8sNode || inst.AvgGPUUtilization != nil {
 			continue
 		}
-		nodes = append(nodes, nodeRef{index: i, name: inst.InstanceID})
+		name := inst.K8sNodeName
+		if name == "" {
+			name = inst.InstanceID
+		}
+		nodes = append(nodes, nodeRef{index: i, name: name})
 	}
 	if len(nodes) == 0 {
 		return 0
