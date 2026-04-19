@@ -164,6 +164,7 @@ func nodeToGPUInstance(node corev1.Node, gpuPods []corev1.Pod, clusterName strin
 		Name:         fmt.Sprintf("%s/%s", clusterName, hostname),
 		Tags:         tags,
 		ClusterName:  clusterName,
+		K8sNodeName:  node.Name,
 		GPUAllocated: gpuAllocated,
 		InstanceType: instanceType,
 		GPUModel:     gpuModel,

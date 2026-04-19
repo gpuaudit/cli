@@ -112,6 +112,7 @@ func EnrichK8sGPUMetrics(ctx context.Context, client CloudWatchClient, instances
 		Value: aws.String(clusterName),
 	}
 
+	enriched := 0
 	for _, node := range nodes {
 		instanceDim := cwtypes.Dimension{
 			Name:  aws.String("InstanceId"),
@@ -127,12 +128,18 @@ func EnrichK8sGPUMetrics(ctx context.Context, client CloudWatchClient, instances
 
 		results, err := fetchMetrics(ctx, client, queries, start, now)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "  warning: Container Insights metrics unavailable for %s: %v\n", node.instanceID, err)
-			continue
+			fmt.Fprintf(os.Stderr, "  warning: Container Insights metrics unavailable: %v\n", err)
+			break
 		}
 
-		instances[node.index].AvgGPUUtilization = results["gpu_util_"+safeID]
-		instances[node.index].AvgGPUMemUtilization = results["gpu_mem_"+safeID]
+		if results["gpu_util_"+safeID] != nil {
+			instances[node.index].AvgGPUUtilization = results["gpu_util_"+safeID]
+			instances[node.index].AvgGPUMemUtilization = results["gpu_mem_"+safeID]
+			enriched++
+		}
+	}
+	if enriched > 0 {
+		fmt.Fprintf(os.Stderr, "  CloudWatch: got GPU metrics for %d of %d nodes\n", enriched, len(nodes))
 	}
 }
 

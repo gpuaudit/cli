@@ -33,7 +33,11 @@ func EnrichDCGMMetrics(ctx context.Context, client K8sClient, instances []models
 		if inst.Source != models.SourceK8sNode || inst.AvgGPUUtilization != nil {
 			continue
 		}
-		needsMetrics[inst.InstanceID] = i
+		key := inst.K8sNodeName
+		if key == "" {
+			key = inst.InstanceID
+		}
+		needsMetrics[key] = i
 	}
 	if len(needsMetrics) == 0 {
 		return 0
