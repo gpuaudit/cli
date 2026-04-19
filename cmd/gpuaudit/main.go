@@ -309,6 +309,7 @@ var iamPolicyCmd = &cobra.Command{
 						"ec2:DescribeInstances",
 						"ec2:DescribeInstanceTypes",
 						"ec2:DescribeRegions",
+						"ec2:DescribeSpotPriceHistory",
 					},
 					"Resource": "*",
 				},
