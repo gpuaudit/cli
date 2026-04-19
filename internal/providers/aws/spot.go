@@ -53,7 +53,10 @@ func EnrichSpotPrices(ctx context.Context, client SpotPriceClient, instances []m
 		return
 	}
 
-	// Take the most recent price per instance type (API returns newest first).
+	// Take the most recent price per instance type. The API returns entries
+	// per (type, AZ) sorted newest-first. We collapse across AZs — spot prices
+	// within a region are typically within a few percent. A 1-hour window with
+	// a handful of GPU types fits well within a single API page (1000 entries).
 	latestPrice := make(map[string]float64)
 	for _, sp := range out.SpotPriceHistory {
 		itype := string(sp.InstanceType)
