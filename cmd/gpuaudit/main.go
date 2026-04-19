@@ -52,6 +52,11 @@ var (
 	scanKubeContext   string
 	scanExcludeTags   []string
 	scanMinUptimeDays int
+	scanTargets       []string
+	scanRole          string
+	scanExternalID    string
+	scanOrg           bool
+	scanSkipSelf      bool
 )
 
 // --- diff command ---
@@ -85,6 +90,12 @@ func init() {
 	scanCmd.Flags().StringVar(&scanKubeContext, "kube-context", "", "Kubernetes context to use (default: current context)")
 	scanCmd.Flags().StringSliceVar(&scanExcludeTags, "exclude-tag", nil, "Exclude instances matching tag (key=value, repeatable)")
 	scanCmd.Flags().IntVar(&scanMinUptimeDays, "min-uptime-days", 0, "Only flag instances running for at least this many days")
+	scanCmd.Flags().StringSliceVar(&scanTargets, "targets", nil, "Account IDs to scan (comma-separated)")
+	scanCmd.Flags().StringVar(&scanRole, "role", "", "IAM role name to assume in each target")
+	scanCmd.Flags().StringVar(&scanExternalID, "external-id", "", "STS external ID for cross-account role assumption")
+	scanCmd.Flags().BoolVar(&scanOrg, "org", false, "Auto-discover all accounts from AWS Organizations")
+	scanCmd.Flags().BoolVar(&scanSkipSelf, "skip-self", false, "Exclude the caller's own account from the scan")
+	scanCmd.MarkFlagsMutuallyExclusive("targets", "org")
 
 	diffCmd.Flags().StringVar(&diffFormat, "format", "table", "Output format: table, json")
 
@@ -98,6 +109,10 @@ func init() {
 func runScan(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 
+	if (len(scanTargets) > 0 || scanOrg) && scanRole == "" {
+		return fmt.Errorf("--role is required when using --targets or --org")
+	}
+
 	opts := awsprovider.DefaultScanOptions()
 	opts.Profile = scanProfile
 	opts.Regions = scanRegions
@@ -107,6 +122,11 @@ func runScan(cmd *cobra.Command, args []string) error {
 	opts.SkipCosts = scanSkipCosts
 	opts.ExcludeTags = parseExcludeTags(scanExcludeTags)
 	opts.MinUptimeDays = scanMinUptimeDays
+	opts.Targets = scanTargets
+	opts.Role = scanRole
+	opts.ExternalID = scanExternalID
+	opts.OrgScan = scanOrg
+	opts.SkipSelf = scanSkipSelf
 
 	result, err := awsprovider.Scan(ctx, opts)
 	if err != nil {
@@ -322,8 +342,21 @@ var iamPolicyCmd = &cobra.Command{
 					},
 					"Resource": "*",
 				},
+				{
+					"Sid":      "GPUAuditCrossAccount",
+					"Effect":   "Allow",
+					"Action":   "sts:AssumeRole",
+					"Resource": "arn:aws:iam::*:role/gpuaudit-reader",
+				},
+				{
+					"Sid":      "GPUAuditOrganizations",
+					"Effect":   "Allow",
+					"Action":   "organizations:ListAccounts",
+					"Resource": "*",
+				},
 			},
 		}
+		fmt.Fprintln(os.Stdout, "// The last two statements (CrossAccount, Organizations) are only needed for --targets or --org scanning.")
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
 		enc.Encode(policy)
