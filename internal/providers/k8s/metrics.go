@@ -6,8 +6,14 @@ package k8s
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"os"
+	"strconv"
+	"strings"
 
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
@@ -129,4 +135,158 @@ func avgMetricValue(family *dto.MetricFamily) *float64 {
 	}
 	avg := sum / float64(count)
 	return &avg
+}
+
+// PrometheusOptions configures how to reach a Prometheus-compatible API.
+type PrometheusOptions struct {
+	URL      string
+	Endpoint string
+}
+
+// EnrichPrometheusMetrics queries a Prometheus endpoint for GPU utilization metrics
+// for K8s nodes that don't already have AvgGPUUtilization populated.
+func EnrichPrometheusMetrics(ctx context.Context, client K8sClient, instances []models.GPUInstance, opts PrometheusOptions) int {
+	if opts.URL == "" && opts.Endpoint == "" {
+		return 0
+	}
+
+	type nodeRef struct {
+		index int
+		name  string
+	}
+	var nodes []nodeRef
+	for i := range instances {
+		inst := &instances[i]
+		if inst.Source != models.SourceK8sNode || inst.AvgGPUUtilization != nil {
+			continue
+		}
+		nodes = append(nodes, nodeRef{index: i, name: inst.InstanceID})
+	}
+	if len(nodes) == 0 {
+		return 0
+	}
+
+	source := opts.URL
+	if source == "" {
+		source = opts.Endpoint
+	}
+	fmt.Fprintf(os.Stderr, "  Querying Prometheus at %s...\n", source)
+
+	nodeNames := make([]string, len(nodes))
+	for i, n := range nodes {
+		nodeNames[i] = n.name
+	}
+	nodeRegex := strings.Join(nodeNames, "|")
+
+	gpuResults := queryPrometheus(ctx, client, opts,
+		fmt.Sprintf(`avg_over_time(DCGM_FI_DEV_GPU_UTIL{node=~"%s"}[7d])`, nodeRegex))
+	memResults := queryPrometheus(ctx, client, opts,
+		fmt.Sprintf(`avg_over_time(DCGM_FI_DEV_MEM_COPY_UTIL{node=~"%s"}[7d])`, nodeRegex))
+
+	enriched := 0
+	for _, node := range nodes {
+		if val, ok := gpuResults[node.name]; ok {
+			instances[node.index].AvgGPUUtilization = &val
+			if memVal, ok := memResults[node.name]; ok {
+				instances[node.index].AvgGPUMemUtilization = &memVal
+			}
+			enriched++
+		}
+	}
+
+	fmt.Fprintf(os.Stderr, "  Prometheus: got GPU metrics for %d of %d remaining nodes\n", enriched, len(nodes))
+	return enriched
+}
+
+func queryPrometheus(ctx context.Context, client K8sClient, opts PrometheusOptions, query string) map[string]float64 {
+	var data []byte
+	var err error
+
+	if opts.URL != "" {
+		data, err = queryPrometheusHTTP(ctx, opts.URL, query)
+	} else {
+		data, err = queryPrometheusProxy(ctx, client, opts.Endpoint, query)
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "  warning: Prometheus query failed: %v\n", err)
+		return nil
+	}
+
+	return parsePrometheusResponse(data)
+}
+
+func queryPrometheusHTTP(ctx context.Context, baseURL, query string) ([]byte, error) {
+	u := fmt.Sprintf("%s/api/v1/query?query=%s", strings.TrimRight(baseURL, "/"), url.QueryEscape(query))
+	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	return io.ReadAll(resp.Body)
+}
+
+func queryPrometheusProxy(ctx context.Context, client K8sClient, endpoint, query string) ([]byte, error) {
+	ns, svc, port, err := parsePrometheusEndpoint(endpoint)
+	if err != nil {
+		return nil, err
+	}
+	path := fmt.Sprintf("/api/v1/query?query=%s", url.QueryEscape(query))
+	return client.ProxyGet(ctx, ns, svc, port, path)
+}
+
+func parsePrometheusEndpoint(endpoint string) (namespace, service, port string, err error) {
+	slashIdx := strings.Index(endpoint, "/")
+	if slashIdx < 1 {
+		return "", "", "", fmt.Errorf("invalid endpoint format %q, expected namespace/service:port", endpoint)
+	}
+	namespace = endpoint[:slashIdx]
+	rest := endpoint[slashIdx+1:]
+	colonIdx := strings.LastIndex(rest, ":")
+	if colonIdx < 1 {
+		return "", "", "", fmt.Errorf("invalid endpoint format %q, expected namespace/service:port", endpoint)
+	}
+	service = rest[:colonIdx]
+	port = rest[colonIdx+1:]
+	return namespace, service, port, nil
+}
+
+func parsePrometheusResponse(data []byte) map[string]float64 {
+	var resp struct {
+		Status string `json:"status"`
+		Data   struct {
+			ResultType string `json:"resultType"`
+			Result     []struct {
+				Metric map[string]string `json:"metric"`
+				Value  []json.RawMessage `json:"value"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil
+	}
+	if resp.Status != "success" {
+		return nil
+	}
+
+	results := make(map[string]float64)
+	for _, r := range resp.Data.Result {
+		node := r.Metric["node"]
+		if node == "" || len(r.Value) < 2 {
+			continue
+		}
+		var valStr string
+		if err := json.Unmarshal(r.Value[1], &valStr); err != nil {
+			continue
+		}
+		val, err := strconv.ParseFloat(valStr, 64)
+		if err != nil {
+			continue
+		}
+		results[node] = val
+	}
+	return results
 }
