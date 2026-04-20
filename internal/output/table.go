@@ -128,6 +128,9 @@ func printInstanceTable(w io.Writer, instances []models.GPUInstance, multiTarget
 		signal := ""
 		if len(inst.WasteSignals) > 0 {
 			signal = inst.WasteSignals[0].Type
+			if inst.AvgGPUUtilization != nil {
+				signal += fmt.Sprintf(" [GPU %.0f%%]", *inst.AvgGPUUtilization)
+			}
 		}
 
 		rec := ""

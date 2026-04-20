@@ -6,13 +6,9 @@ package k8s
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"net/url"
 	"os"
-	"strconv"
 	"strings"
 
 	dto "github.com/prometheus/client_model/go"
@@ -22,6 +18,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/gpuaudit/cli/internal/models"
+	prom "github.com/gpuaudit/cli/internal/prometheus"
 )
 
 // EnrichDCGMMetrics discovers dcgm-exporter pods and scrapes GPU metrics for K8s nodes
@@ -198,9 +195,9 @@ func EnrichPrometheusMetrics(ctx context.Context, client K8sClient, instances []
 	nodeRegex := strings.Join(nodeNames, "|")
 
 	gpuResults := queryPrometheus(ctx, client, opts,
-		fmt.Sprintf(`avg_over_time(DCGM_FI_DEV_GPU_UTIL{node=~"%s"}[7d])`, nodeRegex))
+		fmt.Sprintf(`avg_over_time(DCGM_FI_DEV_GPU_UTIL{node=~"%s"}[7d])`, nodeRegex), "node")
 	memResults := queryPrometheus(ctx, client, opts,
-		fmt.Sprintf(`avg_over_time(DCGM_FI_DEV_MEM_COPY_UTIL{node=~"%s"}[7d])`, nodeRegex))
+		fmt.Sprintf(`avg_over_time(DCGM_FI_DEV_MEM_COPY_UTIL{node=~"%s"}[7d])`, nodeRegex), "node")
 
 	enriched := 0
 	for _, node := range nodes {
@@ -217,35 +214,27 @@ func EnrichPrometheusMetrics(ctx context.Context, client K8sClient, instances []
 	return enriched
 }
 
-func queryPrometheus(ctx context.Context, client K8sClient, opts PrometheusOptions, query string) map[string]float64 {
-	var data []byte
-	var err error
-
+func queryPrometheus(ctx context.Context, client K8sClient, opts PrometheusOptions, query, labelName string) map[string]float64 {
 	if opts.URL != "" {
-		data, err = queryPrometheusHTTP(ctx, opts.URL, query)
-	} else {
-		data, err = queryPrometheusProxy(ctx, client, opts.Endpoint, query)
+		results, err := prom.QueryHTTP(ctx, opts.URL, query, labelName)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "  warning: Prometheus query failed: %v\n", err)
+			return nil
+		}
+		return results
 	}
+
+	data, err := queryPrometheusProxy(ctx, client, opts.Endpoint, query)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "  warning: Prometheus query failed: %v\n", err)
 		return nil
 	}
-
-	return parsePrometheusResponse(data)
-}
-
-func queryPrometheusHTTP(ctx context.Context, baseURL, query string) ([]byte, error) {
-	u := fmt.Sprintf("%s/api/v1/query?query=%s", strings.TrimRight(baseURL, "/"), url.QueryEscape(query))
-	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
+	results, err := prom.ParseResponse(data, labelName)
 	if err != nil {
-		return nil, err
+		fmt.Fprintf(os.Stderr, "  warning: Prometheus response parse failed: %v\n", err)
+		return nil
 	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	return io.ReadAll(resp.Body)
+	return results
 }
 
 func queryPrometheusProxy(ctx context.Context, client K8sClient, endpoint, query string) ([]byte, error) {
@@ -273,39 +262,3 @@ func parsePrometheusEndpoint(endpoint string) (namespace, service, port string, 
 	return namespace, service, port, nil
 }
 
-func parsePrometheusResponse(data []byte) map[string]float64 {
-	var resp struct {
-		Status string `json:"status"`
-		Data   struct {
-			ResultType string `json:"resultType"`
-			Result     []struct {
-				Metric map[string]string `json:"metric"`
-				Value  []json.RawMessage `json:"value"`
-			} `json:"result"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal(data, &resp); err != nil {
-		return nil
-	}
-	if resp.Status != "success" {
-		return nil
-	}
-
-	results := make(map[string]float64)
-	for _, r := range resp.Data.Result {
-		node := r.Metric["node"]
-		if node == "" || len(r.Value) < 2 {
-			continue
-		}
-		var valStr string
-		if err := json.Unmarshal(r.Value[1], &valStr); err != nil {
-			continue
-		}
-		val, err := strconv.ParseFloat(valStr, 64)
-		if err != nil {
-			continue
-		}
-		results[node] = val
-	}
-	return results
-}

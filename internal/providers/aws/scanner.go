@@ -36,6 +36,9 @@ type ScanOptions struct {
 	ExcludeTags   map[string]string
 	MinUptimeDays int
 
+	// Prometheus
+	PromURL string
+
 	// Multi-target options
 	Targets    []string
 	Role       string
@@ -247,6 +250,11 @@ func scanTarget(ctx context.Context, target Target, regions []string, opts ScanO
 		if err := EnrichCostData(ctx, ceClient, allInstances); err != nil {
 			fmt.Fprintf(os.Stderr, "  warning: could not enrich cost data for account %s: %v\n", target.AccountID, err)
 		}
+	}
+
+	// Enrich EC2 GPU metrics from Prometheus (for instances missing GPU utilization)
+	if !opts.SkipMetrics && opts.PromURL != "" && len(allInstances) > 0 {
+		EnrichEC2PrometheusGPUMetrics(ctx, opts.PromURL, allInstances)
 	}
 
 	return allInstances, scannedRegions
