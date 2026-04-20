@@ -93,7 +93,7 @@ func init() {
 	scanCmd.Flags().BoolVar(&scanSkipCosts, "skip-costs", false, "Skip Cost Explorer data enrichment")
 	scanCmd.Flags().StringVar(&scanKubeconfig, "kubeconfig", "", "Path to kubeconfig file (default: ~/.kube/config)")
 	scanCmd.Flags().StringVar(&scanKubeContext, "kube-context", "", "Kubernetes context to use (default: current context)")
-	scanCmd.Flags().StringVar(&scanPromURL, "prom-url", "", "Prometheus URL for GPU metrics (e.g., https://prometheus.corp.example.com)")
+	scanCmd.Flags().StringVar(&scanPromURL, "prom-url", "", "Prometheus URL for GPU metrics on EC2 and K8s (e.g., https://prometheus.corp.example.com)")
 	scanCmd.Flags().StringVar(&scanPromEndpoint, "prom-endpoint", "", "In-cluster Prometheus service as namespace/service:port (e.g., monitoring/prometheus:9090)")
 	scanCmd.Flags().StringSliceVar(&scanExcludeTags, "exclude-tag", nil, "Exclude instances matching tag (key=value, repeatable)")
 	scanCmd.Flags().IntVar(&scanMinUptimeDays, "min-uptime-days", 0, "Only flag instances running for at least this many days")
@@ -136,6 +136,7 @@ func runScan(cmd *cobra.Command, args []string) error {
 	opts.Targets = scanTargets
 	opts.Role = scanRole
 	opts.ExternalID = scanExternalID
+	opts.PromURL = scanPromURL
 	opts.OrgScan = scanOrg
 	opts.SkipSelf = scanSkipSelf
 

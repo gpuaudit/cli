@@ -57,6 +57,9 @@ type GPUInstance struct {
 	Name       string            `json:"name"` // from Name tag or endpoint name
 	Tags       map[string]string `json:"tags,omitempty"`
 
+	// Network (populated for EC2)
+	PrivateDnsName string `json:"private_dns_name,omitempty"`
+
 	// GPU hardware
 	InstanceType  string  `json:"instance_type"`
 	GPUModel      string  `json:"gpu_model"`
