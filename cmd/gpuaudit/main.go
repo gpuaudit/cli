@@ -84,7 +84,7 @@ var scanCmd = &cobra.Command{
 func init() {
 	scanCmd.Flags().StringVar(&scanProfile, "profile", "", "AWS profile to use")
 	scanCmd.Flags().StringSliceVar(&scanRegions, "region", nil, "AWS regions to scan (default: common GPU regions)")
-	scanCmd.Flags().StringVar(&scanFormat, "format", "table", "Output format: table, json, markdown, slack")
+	scanCmd.Flags().StringVar(&scanFormat, "format", "table", "Output format: table, json, markdown, slack, csv")
 	scanCmd.Flags().StringVarP(&scanOutput, "output", "o", "", "Write output to file instead of stdout")
 	scanCmd.Flags().BoolVar(&scanSkipMetrics, "skip-metrics", false, "Skip CloudWatch metrics collection (faster but less accurate)")
 	scanCmd.Flags().BoolVar(&scanSkipSageMaker, "skip-sagemaker", false, "Skip SageMaker endpoint scanning")
@@ -190,6 +190,8 @@ func runScan(cmd *cobra.Command, args []string) error {
 		output.FormatMarkdown(w, result)
 	case "slack":
 		return output.FormatSlack(w, result)
+	case "csv":
+		return output.FormatCSV(w, result)
 	default:
 		output.FormatTable(w, result)
 	}
