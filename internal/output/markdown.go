@@ -31,14 +31,41 @@ func FormatMarkdown(w io.Writer, result *models.ScanResult) {
 	fmt.Fprintf(w, "| Warning | %d |\n", s.WarningCount)
 	fmt.Fprintf(w, "| Healthy | %d |\n\n", s.HealthyCount)
 
+	// Per-target breakdown
+	if len(result.TargetSummaries) > 1 {
+		fmt.Fprintf(w, "## By Target\n\n")
+		fmt.Fprintf(w, "| Target | Instances | Spend/mo | Waste/mo | Waste |\n")
+		fmt.Fprintf(w, "|---|---|---|---|---|\n")
+		for _, ts := range result.TargetSummaries {
+			fmt.Fprintf(w, "| %s | %d | $%.0f | $%.0f | %.0f%% |\n",
+				ts.Target, ts.TotalInstances, ts.TotalMonthlyCost,
+				ts.TotalEstimatedWaste, ts.WastePercent)
+		}
+		fmt.Fprintln(w)
+	}
+
+	if len(result.TargetErrors) > 0 {
+		fmt.Fprintf(w, "## Warnings\n\n")
+		for _, te := range result.TargetErrors {
+			fmt.Fprintf(w, "- **%s** — %s\n", te.Target, te.Error)
+		}
+		fmt.Fprintln(w)
+	}
+
 	if s.TotalInstances == 0 {
 		fmt.Fprintf(w, "No GPU instances found.\n")
 		return
 	}
 
 	fmt.Fprintf(w, "## Findings\n\n")
-	fmt.Fprintf(w, "| Instance | Type | Monthly Cost | Signal | Savings | Recommendation |\n")
-	fmt.Fprintf(w, "|---|---|---|---|---|---|\n")
+	multiTarget := len(result.TargetSummaries) > 1
+	if multiTarget {
+		fmt.Fprintf(w, "| Instance | Target | Type | Monthly Cost | Signal | Savings | Recommendation |\n")
+		fmt.Fprintf(w, "|---|---|---|---|---|---|---|\n")
+	} else {
+		fmt.Fprintf(w, "| Instance | Type | Monthly Cost | Signal | Savings | Recommendation |\n")
+		fmt.Fprintf(w, "|---|---|---|---|---|---|\n")
+	}
 
 	for _, inst := range result.Instances {
 		name := inst.Name
@@ -61,8 +88,14 @@ func FormatMarkdown(w io.Writer, result *models.ScanResult) {
 			savings = fmt.Sprintf("$%.0f/mo", inst.EstimatedSavings)
 		}
 
-		fmt.Fprintf(w, "| %s | %s (%d× %s) | $%.0f | %s | %s | %s |\n",
-			name, inst.InstanceType, inst.GPUCount, inst.GPUModel,
-			inst.MonthlyCost, signal, savings, rec)
+		if multiTarget {
+			fmt.Fprintf(w, "| %s | %s | %s (%d× %s) | $%.0f | %s | %s | %s |\n",
+				name, inst.AccountID, inst.InstanceType, inst.GPUCount, inst.GPUModel,
+				inst.MonthlyCost, signal, savings, rec)
+		} else {
+			fmt.Fprintf(w, "| %s | %s (%d× %s) | $%.0f | %s | %s | %s |\n",
+				name, inst.InstanceType, inst.GPUCount, inst.GPUModel,
+				inst.MonthlyCost, signal, savings, rec)
+		}
 	}
 }

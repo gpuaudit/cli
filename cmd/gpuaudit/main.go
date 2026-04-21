@@ -13,12 +13,16 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/gpuaudit/cli/internal/models"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
+
 	"github.com/gpuaudit/cli/internal/analysis"
-	awsprovider "github.com/gpuaudit/cli/internal/providers/aws"
-	k8sprovider "github.com/gpuaudit/cli/internal/providers/k8s"
+	"github.com/gpuaudit/cli/internal/diff"
+	"github.com/gpuaudit/cli/internal/models"
 	"github.com/gpuaudit/cli/internal/output"
 	"github.com/gpuaudit/cli/internal/pricing"
+	awsprovider "github.com/gpuaudit/cli/internal/providers/aws"
+	k8sprovider "github.com/gpuaudit/cli/internal/providers/k8s"
 )
 
 var version = "dev"
@@ -49,9 +53,27 @@ var (
 	scanSkipCosts     bool
 	scanKubeconfig    string
 	scanKubeContext   string
+	scanPromURL       string
+	scanPromEndpoint  string
 	scanExcludeTags   []string
 	scanMinUptimeDays int
+	scanTargets       []string
+	scanRole          string
+	scanExternalID    string
+	scanOrg           bool
+	scanSkipSelf      bool
 )
+
+// --- diff command ---
+
+var diffFormat string
+
+var diffCmd = &cobra.Command{
+	Use:   "diff <old.json> <new.json>",
+	Short: "Compare two scan results and show what changed",
+	Args:  cobra.ExactArgs(2),
+	RunE:  runDiff,
+}
 
 var scanCmd = &cobra.Command{
 	Use:   "scan",
@@ -71,17 +93,36 @@ func init() {
 	scanCmd.Flags().BoolVar(&scanSkipCosts, "skip-costs", false, "Skip Cost Explorer data enrichment")
 	scanCmd.Flags().StringVar(&scanKubeconfig, "kubeconfig", "", "Path to kubeconfig file (default: ~/.kube/config)")
 	scanCmd.Flags().StringVar(&scanKubeContext, "kube-context", "", "Kubernetes context to use (default: current context)")
+	scanCmd.Flags().StringVar(&scanPromURL, "prom-url", "", "Prometheus URL for GPU metrics on EC2 and K8s (e.g., https://prometheus.corp.example.com)")
+	scanCmd.Flags().StringVar(&scanPromEndpoint, "prom-endpoint", "", "In-cluster Prometheus service as namespace/service:port (e.g., monitoring/prometheus:9090)")
 	scanCmd.Flags().StringSliceVar(&scanExcludeTags, "exclude-tag", nil, "Exclude instances matching tag (key=value, repeatable)")
 	scanCmd.Flags().IntVar(&scanMinUptimeDays, "min-uptime-days", 0, "Only flag instances running for at least this many days")
+	scanCmd.Flags().StringSliceVar(&scanTargets, "targets", nil, "Account IDs to scan (comma-separated)")
+	scanCmd.Flags().StringVar(&scanRole, "role", "", "IAM role name to assume in each target")
+	scanCmd.Flags().StringVar(&scanExternalID, "external-id", "", "STS external ID for cross-account role assumption")
+	scanCmd.Flags().BoolVar(&scanOrg, "org", false, "Auto-discover all accounts from AWS Organizations")
+	scanCmd.Flags().BoolVar(&scanSkipSelf, "skip-self", false, "Exclude the caller's own account from the scan")
+	scanCmd.MarkFlagsMutuallyExclusive("targets", "org")
+
+	diffCmd.Flags().StringVar(&diffFormat, "format", "table", "Output format: table, json")
 
 	rootCmd.AddCommand(scanCmd)
+	rootCmd.AddCommand(diffCmd)
 	rootCmd.AddCommand(pricingCmd)
 	rootCmd.AddCommand(iamPolicyCmd)
 	rootCmd.AddCommand(versionCmd)
 }
 
 func runScan(cmd *cobra.Command, args []string) error {
+	if scanPromURL != "" && scanPromEndpoint != "" {
+		return fmt.Errorf("--prom-url and --prom-endpoint are mutually exclusive")
+	}
+
 	ctx := context.Background()
+
+	if (len(scanTargets) > 0 || scanOrg) && scanRole == "" {
+		return fmt.Errorf("--role is required when using --targets or --org")
+	}
 
 	opts := awsprovider.DefaultScanOptions()
 	opts.Profile = scanProfile
@@ -92,9 +133,17 @@ func runScan(cmd *cobra.Command, args []string) error {
 	opts.SkipCosts = scanSkipCosts
 	opts.ExcludeTags = parseExcludeTags(scanExcludeTags)
 	opts.MinUptimeDays = scanMinUptimeDays
+	opts.Targets = scanTargets
+	opts.Role = scanRole
+	opts.ExternalID = scanExternalID
+	opts.PromURL = scanPromURL
+	opts.OrgScan = scanOrg
+	opts.SkipSelf = scanSkipSelf
 
+	awsAvailable := true
 	result, err := awsprovider.Scan(ctx, opts)
 	if err != nil {
+		awsAvailable = false
 		if scanSkipK8s {
 			return fmt.Errorf("scan failed: %w", err)
 		}
@@ -106,13 +155,18 @@ func runScan(cmd *cobra.Command, args []string) error {
 	// Kubernetes API scan
 	if !scanSkipK8s {
 		k8sOpts := k8sprovider.ScanOptions{
-			Kubeconfig: scanKubeconfig,
-			Context:    scanKubeContext,
+			Kubeconfig:   scanKubeconfig,
+			Context:      scanKubeContext,
+			PromURL:      scanPromURL,
+			PromEndpoint: scanPromEndpoint,
 		}
 		k8sInstances, err := k8sprovider.Scan(ctx, k8sOpts)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "  warning: Kubernetes scan failed: %v\n", err)
 		} else if len(k8sInstances) > 0 {
+			if !scanSkipMetrics {
+				enrichK8sGPUMetrics(ctx, k8sInstances, k8sOpts, opts, awsAvailable)
+			}
 			analysis.AnalyzeAll(k8sInstances)
 			result.Instances = append(result.Instances, k8sInstances...)
 			result.Summary = awsprovider.BuildSummary(result.Instances)
@@ -142,6 +196,40 @@ func runScan(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+func runDiff(cmd *cobra.Command, args []string) error {
+	old, err := loadScanResult(args[0])
+	if err != nil {
+		return fmt.Errorf("loading old scan: %w", err)
+	}
+	new, err := loadScanResult(args[1])
+	if err != nil {
+		return fmt.Errorf("loading new scan: %w", err)
+	}
+
+	result := diff.Compare(old, new)
+
+	switch strings.ToLower(diffFormat) {
+	case "json":
+		return output.FormatDiffJSON(os.Stdout, result)
+	default:
+		output.FormatDiffTable(os.Stdout, result)
+	}
+
+	return nil
+}
+
+func loadScanResult(path string) (*models.ScanResult, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var result models.ScanResult
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, fmt.Errorf("parsing %s: %w", path, err)
+	}
+	return &result, nil
 }
 
 // --- pricing command ---
@@ -222,6 +310,7 @@ var iamPolicyCmd = &cobra.Command{
 						"ec2:DescribeInstances",
 						"ec2:DescribeInstanceTypes",
 						"ec2:DescribeRegions",
+						"ec2:DescribeSpotPriceHistory",
 					},
 					"Resource": "*",
 				},
@@ -273,8 +362,21 @@ var iamPolicyCmd = &cobra.Command{
 					},
 					"Resource": "*",
 				},
+				{
+					"Sid":      "GPUAuditCrossAccount",
+					"Effect":   "Allow",
+					"Action":   "sts:AssumeRole",
+					"Resource": "arn:aws:iam::*:role/gpuaudit-reader",
+				},
+				{
+					"Sid":      "GPUAuditOrganizations",
+					"Effect":   "Allow",
+					"Action":   "organizations:ListAccounts",
+					"Resource": "*",
+				},
 			},
 		}
+		fmt.Fprintln(os.Stdout, "// The last two statements (CrossAccount, Organizations) are only needed for --targets or --org scanning.")
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
 		enc.Encode(policy)
@@ -299,4 +401,61 @@ func parseExcludeTags(raw []string) map[string]string {
 		}
 	}
 	return tags
+}
+
+func enrichK8sGPUMetrics(ctx context.Context, instances []models.GPUInstance, k8sOpts k8sprovider.ScanOptions, awsOpts awsprovider.ScanOptions, awsAvailable bool) {
+	// Source 1: CloudWatch Container Insights (skip if AWS creds unavailable)
+	if awsAvailable && len(instances) > 0 && instances[0].ClusterName != "" {
+		cfgOpts := []func(*awsconfig.LoadOptions) error{}
+		if awsOpts.Profile != "" {
+			cfgOpts = append(cfgOpts, awsconfig.WithSharedConfigProfile(awsOpts.Profile))
+		}
+		cfg, err := awsconfig.LoadDefaultConfig(ctx, cfgOpts...)
+		if err == nil {
+			region := instances[0].Region
+			if region == "" {
+				region = "us-east-1"
+			}
+			cfg.Region = region
+			cwClient := cloudwatch.NewFromConfig(cfg)
+			fmt.Fprintf(os.Stderr, "  Enriching K8s GPU metrics via CloudWatch Container Insights...\n")
+			awsprovider.EnrichK8sGPUMetrics(ctx, cwClient, instances, instances[0].ClusterName, awsprovider.DefaultMetricWindow)
+		}
+	}
+
+	// Source 2: DCGM exporter scrape
+	remaining := 0
+	for _, inst := range instances {
+		if inst.Source == models.SourceK8sNode && inst.AvgGPUUtilization == nil {
+			remaining++
+		}
+	}
+	if remaining > 0 {
+		client, _, err := k8sprovider.BuildClientPublic(k8sOpts.Kubeconfig, k8sOpts.Context)
+		if err == nil {
+			k8sprovider.EnrichDCGMMetrics(ctx, client, instances)
+		}
+	}
+
+	// Source 3: Prometheus query
+	remaining = 0
+	for _, inst := range instances {
+		if inst.Source == models.SourceK8sNode && inst.AvgGPUUtilization == nil {
+			remaining++
+		}
+	}
+	if remaining > 0 && (k8sOpts.PromURL != "" || k8sOpts.PromEndpoint != "") {
+		var client k8sprovider.K8sClient
+		if k8sOpts.PromEndpoint != "" {
+			c, _, err := k8sprovider.BuildClientPublic(k8sOpts.Kubeconfig, k8sOpts.Context)
+			if err == nil {
+				client = c
+			}
+		}
+		promOpts := k8sprovider.PrometheusOptions{
+			URL:      k8sOpts.PromURL,
+			Endpoint: k8sOpts.PromEndpoint,
+		}
+		k8sprovider.EnrichPrometheusMetrics(ctx, client, instances, promOpts)
+	}
 }

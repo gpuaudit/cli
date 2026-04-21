@@ -34,6 +34,27 @@ func FormatSlack(w io.Writer, result *models.ScanResult) error {
 
 	blocks = append(blocks, map[string]any{"type": "divider"})
 
+	// Per-target breakdown
+	if len(result.TargetSummaries) > 1 {
+		lines := []string{"*By Target*"}
+		for _, ts := range result.TargetSummaries {
+			lines = append(lines, fmt.Sprintf("• `%s` — %d instances, $%.0f/mo spend, $%.0f/mo waste (%.0f%%)",
+				ts.Target, ts.TotalInstances, ts.TotalMonthlyCost,
+				ts.TotalEstimatedWaste, ts.WastePercent))
+		}
+		blocks = append(blocks, slackSection(strings.Join(lines, "\n")))
+		blocks = append(blocks, map[string]any{"type": "divider"})
+	}
+
+	// Target errors
+	if len(result.TargetErrors) > 0 {
+		lines := []string{":warning: *Target Warnings*"}
+		for _, te := range result.TargetErrors {
+			lines = append(lines, fmt.Sprintf("• `%s` — %s", te.Target, te.Error))
+		}
+		blocks = append(blocks, slackSection(strings.Join(lines, "\n")))
+	}
+
 	// Critical findings
 	critical, warning, _ := groupBySeverity(result.Instances)
 

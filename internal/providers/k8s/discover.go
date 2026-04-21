@@ -24,6 +24,7 @@ const gpuResourceName corev1.ResourceName = "nvidia.com/gpu"
 type K8sClient interface {
 	ListNodes(ctx context.Context, opts metav1.ListOptions) (*corev1.NodeList, error)
 	ListPods(ctx context.Context, namespace string, opts metav1.ListOptions) (*corev1.PodList, error)
+	ProxyGet(ctx context.Context, namespace, podName, port, path string) ([]byte, error)
 }
 
 // DiscoverGPUNodes finds Kubernetes nodes with GPU capacity and reports their allocation.
@@ -163,6 +164,7 @@ func nodeToGPUInstance(node corev1.Node, gpuPods []corev1.Pod, clusterName strin
 		Name:         fmt.Sprintf("%s/%s", clusterName, hostname),
 		Tags:         tags,
 		ClusterName:  clusterName,
+		K8sNodeName:  node.Name,
 		GPUAllocated: gpuAllocated,
 		InstanceType: instanceType,
 		GPUModel:     gpuModel,
