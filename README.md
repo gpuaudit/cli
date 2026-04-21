@@ -5,7 +5,7 @@ Scan your cloud for GPU waste and get actionable recommendations to cut your spe
 ```
 $ gpuaudit scan --skip-eks
 
-  Found 103 GPU nodes across 111 nodes in gpu-cluster
+  Found 38 GPU nodes across 47 nodes in gpu-cluster
 
   gpuaudit — GPU Cost Audit for AWS
   Account: 123456789012 | Regions: us-east-1 | Duration: 4.2s
@@ -13,12 +13,12 @@ $ gpuaudit scan --skip-eks
   ┌──────────────────────────────────────────────────────────┐
   │  GPU Fleet Summary                                       │
   ├──────────────────────────────────────────────────────────┤
-  │  Total GPU instances:      103                           │
-  │  Total monthly GPU spend:  $365155                       │
-  │  Estimated monthly waste:  $23408      (   6%)           │
+  │  Total GPU instances:       38                           │
+  │  Total monthly GPU spend:  $127450                       │
+  │  Estimated monthly waste:   $18200      (  14%)          │
   └──────────────────────────────────────────────────────────┘
 
-  CRITICAL — 4 instance(s), $21728/mo potential savings
+  CRITICAL — 3 instance(s), $15400/mo potential savings
 
   Instance                             Type                       Monthly  Signal            Recommendation
   ──────────────────────────────────── ────────────────────────── ────────  ────────────────  ──────────────────────────────────────────────
@@ -107,12 +107,12 @@ gpuaudit diff scan-apr-08.json scan-apr-15.json
   ┌──────────────────────────────────────────────────────────┐
   │  Cost Delta                                              │
   ├──────────────────────────────────────────────────────────┤
-  │  Monthly spend:   $372000    → $365155    (-$6845)       │
-  │  Estimated waste: $189000    → $23408     (-$165592)     │
-  │  Instances:       116 → 103  (-13 removed, +0 added)    │
+  │  Monthly spend:   $142000    → $127450    (-$14550)      │
+  │  Estimated waste:  $31000    → $18200     (-$12800)      │
+  │  Instances:        45 → 38   (-9 removed, +2 added)     │
   └──────────────────────────────────────────────────────────┘
 
-  REMOVED — 13 instance(s), -$6845/mo
+  REMOVED — 9 instance(s), -$16200/mo
   ...
 ```
 
