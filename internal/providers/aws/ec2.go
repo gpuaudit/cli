@@ -97,13 +97,14 @@ func ec2InstanceToGPU(inst ec2types.Instance, accountID, region string) *models.
 	// TODO: detect RI/SP coverage via Cost Explorer
 
 	return &models.GPUInstance{
-		InstanceID:   aws.ToString(inst.InstanceId),
-		Source:       models.SourceEC2,
-		AccountID:    accountID,
-		Region:       region,
-		Name:         name,
-		Tags:         tags,
-		InstanceType: instanceType,
+		InstanceID:     aws.ToString(inst.InstanceId),
+		Source:         models.SourceEC2,
+		AccountID:      accountID,
+		Region:         region,
+		Name:           name,
+		Tags:           tags,
+		PrivateDnsName: aws.ToString(inst.PrivateDnsName),
+		InstanceType:   instanceType,
 		GPUModel:     spec.GPUModel,
 		GPUCount:     spec.GPUCount,
 		GPUVRAMGiB:   spec.GPUVRAMGiB,

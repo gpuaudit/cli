@@ -86,7 +86,7 @@ If none of these differ, the instance is counted as unchanged (not listed).
 
   Instance                             Type                       Monthly
   ------------------------------------ -------------------------- ----------
-  ml-prod-iad/ip-10-22-249-9           g6e.48xlarge (8x L40S)    $26,800
+  gpu-cluster/ip-10-22-249-9           g6e.48xlarge (8x L40S)    $26,800
   ...
 
   ADDED -- 2 instance(s), +$5,000/mo
@@ -99,8 +99,8 @@ If none of these differ, the instance is counted as unchanged (not listed).
 
   Instance                             Change
   ------------------------------------ ------------------------------------------
-  ml-prod-iad/ip-10-1-2-3              GPU allocated: 0 -> 2 (was idle)
-  ml-prod-iad/ip-10-4-5-6              Pricing: on-demand -> reserved (-$2,400/mo)
+  gpu-cluster/ip-10-1-2-3              GPU allocated: 0 -> 2 (was idle)
+  gpu-cluster/ip-10-4-5-6              Pricing: on-demand -> reserved (-$2,400/mo)
 
   UNCHANGED -- 77 instance(s)
 ```
