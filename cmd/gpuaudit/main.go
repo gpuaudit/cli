@@ -191,6 +191,8 @@ func runScan(cmd *cobra.Command, args []string) error {
 		output.FormatMarkdown(w, result)
 	case "slack":
 		return output.FormatSlack(w, result)
+	case "csv":
+		return output.FormatCSV(w, result)
 	default:
 		output.FormatTable(w, result)
 	}
