@@ -66,7 +66,10 @@ var (
 
 // --- diff command ---
 
-var diffFormat string
+var (
+	diffFormat  string
+	diffVerbose bool
+)
 
 var diffCmd = &cobra.Command{
 	Use:   "diff <old.json> <new.json>",
@@ -105,6 +108,7 @@ func init() {
 	scanCmd.MarkFlagsMutuallyExclusive("targets", "org")
 
 	diffCmd.Flags().StringVar(&diffFormat, "format", "table", "Output format: table, json")
+	diffCmd.Flags().BoolVarP(&diffVerbose, "verbose", "v", false, "Show individual instances instead of grouped summary")
 
 	rootCmd.AddCommand(scanCmd)
 	rootCmd.AddCommand(diffCmd)
@@ -214,7 +218,7 @@ func runDiff(cmd *cobra.Command, args []string) error {
 	case "json":
 		return output.FormatDiffJSON(os.Stdout, result)
 	default:
-		output.FormatDiffTable(os.Stdout, result)
+		output.FormatDiffTable(os.Stdout, result, diffVerbose)
 	}
 
 	return nil

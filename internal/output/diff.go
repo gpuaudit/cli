@@ -15,7 +15,8 @@ import (
 )
 
 // FormatDiffTable writes a human-readable diff report.
-func FormatDiffTable(w io.Writer, d *diff.DiffResult) {
+// When verbose is false, added/removed instances are grouped by type.
+func FormatDiffTable(w io.Writer, d *diff.DiffResult, verbose bool) {
 	fmt.Fprintf(w, "\n  gpuaudit diff — %s → %s\n\n", d.OldTimestamp, d.NewTimestamp)
 
 	cs := d.CostSummary
@@ -37,15 +38,20 @@ func FormatDiffTable(w io.Writer, d *diff.DiffResult) {
 		oldCount, newCount, len(d.Removed), len(d.Added)), boxWidth)
 	fmt.Fprintf(w, "  └%s┘\n", boxLine)
 
+	// Fleet changes (grouped net-change view)
+	if !verbose && (len(d.Removed) > 0 || len(d.Added) > 0) {
+		printFleetChanges(w, d.Removed, d.Added)
+	}
+
 	// Removed
-	if len(d.Removed) > 0 {
+	if verbose && len(d.Removed) > 0 {
 		sortInstancesByCost(d.Removed)
 		fmt.Fprintf(w, "\n  REMOVED — %d instance(s), -$%.0f/mo\n\n", len(d.Removed), cs.RemovedSavings)
 		printDiffInstanceTable(w, d.Removed)
 	}
 
 	// Added
-	if len(d.Added) > 0 {
+	if verbose && len(d.Added) > 0 {
 		sortInstancesByCost(d.Added)
 		fmt.Fprintf(w, "\n  ADDED — %d instance(s), +$%.0f/mo\n\n", len(d.Added), cs.AddedCost)
 		printDiffInstanceTable(w, d.Added)
@@ -79,6 +85,89 @@ func FormatDiffTable(w io.Writer, d *diff.DiffResult) {
 	if d.UnchangedCount > 0 {
 		fmt.Fprintf(w, "  UNCHANGED — %d instance(s)\n\n", d.UnchangedCount)
 	}
+}
+
+type typeGroup struct {
+	InstanceType string
+	GPUDesc      string
+	UnitCost     float64
+	Removed      int
+	Added        int
+}
+
+
+func printFleetChanges(w io.Writer, removed, added []models.GPUInstance) {
+	groups := make(map[string]*typeGroup)
+
+	for _, inst := range removed {
+		key := inst.InstanceType
+		g, ok := groups[key]
+		if !ok {
+			g = &typeGroup{
+				InstanceType: inst.InstanceType,
+				GPUDesc:      fmt.Sprintf("%d× %s", inst.GPUCount, inst.GPUModel),
+				UnitCost:     inst.MonthlyCost,
+			}
+			groups[key] = g
+		}
+		g.Removed++
+	}
+
+	for _, inst := range added {
+		key := inst.InstanceType
+		g, ok := groups[key]
+		if !ok {
+			g = &typeGroup{
+				InstanceType: inst.InstanceType,
+				GPUDesc:      fmt.Sprintf("%d× %s", inst.GPUCount, inst.GPUModel),
+				UnitCost:     inst.MonthlyCost,
+			}
+			groups[key] = g
+		}
+		g.Added++
+	}
+
+	// Sort by absolute monthly delta descending
+	sorted := make([]*typeGroup, 0, len(groups))
+	for _, g := range groups {
+		sorted = append(sorted, g)
+	}
+	sort.Slice(sorted, func(i, j int) bool {
+		deltaI := float64(sorted[i].Added-sorted[i].Removed) * sorted[i].UnitCost
+		deltaJ := float64(sorted[j].Added-sorted[j].Removed) * sorted[j].UnitCost
+		if deltaI < 0 {
+			deltaI = -deltaI
+		}
+		if deltaJ < 0 {
+			deltaJ = -deltaJ
+		}
+		return deltaI > deltaJ
+	})
+
+	totalNet := len(added) - len(removed)
+	totalDelta := 0.0
+	for _, g := range sorted {
+		totalDelta += float64(g.Added-g.Removed) * g.UnitCost
+	}
+
+	fmt.Fprintf(w, "\n  FLEET CHANGES — net %+d instances, %s/mo\n\n", totalNet, diffFmtDelta(totalDelta))
+	fmt.Fprintf(w, "  %-30s %5s %14s\n", "Type", "Net", "Monthly Delta")
+	fmt.Fprintf(w, "  %s %s %s\n",
+		strings.Repeat("─", 30), strings.Repeat("─", 5), strings.Repeat("─", 14))
+
+	for _, g := range sorted {
+		net := g.Added - g.Removed
+		if net == 0 {
+			continue
+		}
+		delta := float64(net) * g.UnitCost
+		typeDesc := fmt.Sprintf("%s (%s)", g.InstanceType, g.GPUDesc)
+		if len(typeDesc) > 30 {
+			typeDesc = typeDesc[:27] + "..."
+		}
+		fmt.Fprintf(w, "  %-30s %+5d %14s\n", typeDesc, net, diffFmtDelta(delta))
+	}
+	fmt.Fprintln(w)
 }
 
 func printDiffInstanceTable(w io.Writer, instances []models.GPUInstance) {
