@@ -448,3 +448,79 @@ func TestRuleK8sLowGPUUtil_SkipsHighUtilization(t *testing.T) {
 		t.Errorf("expected no signals for well-utilized GPU")
 	}
 }
+
+func TestRuleStoppedEBS_FlagsStoppedInstance(t *testing.T) {
+	inst := models.GPUInstance{
+		InstanceID:   "i-stopped1",
+		Source:       models.SourceEC2,
+		State:        "stopped",
+		InstanceType: "g5.xlarge",
+		GPUModel:     "A10G",
+		GPUCount:     1,
+		UptimeHours:  720, // 30 days
+		LaunchTime:   time.Now().Add(-720 * time.Hour),
+	}
+
+	ruleStoppedEBS(&inst)
+
+	if len(inst.WasteSignals) != 1 {
+		t.Fatalf("expected 1 signal, got %d", len(inst.WasteSignals))
+	}
+	if inst.WasteSignals[0].Type != "stopped_ebs" {
+		t.Errorf("expected stopped_ebs, got %s", inst.WasteSignals[0].Type)
+	}
+	if inst.WasteSignals[0].Severity != models.SeverityWarning {
+		t.Errorf("expected warning, got %s", inst.WasteSignals[0].Severity)
+	}
+	if len(inst.Recommendations) != 1 {
+		t.Fatalf("expected 1 recommendation, got %d", len(inst.Recommendations))
+	}
+	if inst.Recommendations[0].Action != models.ActionTerminate {
+		t.Errorf("expected terminate, got %s", inst.Recommendations[0].Action)
+	}
+	if inst.Recommendations[0].MonthlySavings != 40 {
+		t.Errorf("expected $40 savings, got %.0f", inst.Recommendations[0].MonthlySavings)
+	}
+}
+
+func TestRuleStoppedEBS_SkipsRunningInstances(t *testing.T) {
+	inst := models.GPUInstance{
+		Source:      models.SourceEC2,
+		State:       "running",
+		UptimeHours: 720,
+	}
+
+	ruleStoppedEBS(&inst)
+
+	if len(inst.WasteSignals) != 0 {
+		t.Errorf("expected no signals for running instance")
+	}
+}
+
+func TestRuleStoppedEBS_SkipsRecentlyStopped(t *testing.T) {
+	inst := models.GPUInstance{
+		Source:      models.SourceEC2,
+		State:       "stopped",
+		UptimeHours: 48, // 2 days — below threshold
+	}
+
+	ruleStoppedEBS(&inst)
+
+	if len(inst.WasteSignals) != 0 {
+		t.Errorf("expected no signals for recently stopped instance")
+	}
+}
+
+func TestRuleStoppedEBS_SkipsNonEC2(t *testing.T) {
+	inst := models.GPUInstance{
+		Source:      models.SourceK8sNode,
+		State:       "stopped",
+		UptimeHours: 720,
+	}
+
+	ruleStoppedEBS(&inst)
+
+	if len(inst.WasteSignals) != 0 {
+		t.Errorf("expected no signals for non-EC2 instance")
+	}
+}

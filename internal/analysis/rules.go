@@ -30,6 +30,7 @@ func analyzeInstance(inst *models.GPUInstance) {
 		ruleK8sUnallocatedGPU,
 		ruleSpotEligible,
 		ruleK8sLowGPUUtil,
+		ruleStoppedEBS,
 	}
 	for _, rule := range rules {
 		rule(inst)
@@ -394,6 +395,41 @@ func ruleSpotEligible(inst *models.GPUInstance) {
 		MonthlySavings:         monthlySavings,
 		SavingsPercent:         savingsPercent,
 		Risk:                   models.RiskHigh,
+	})
+}
+
+// Rule 10: Stopped EC2 instance still incurring EBS costs.
+func ruleStoppedEBS(inst *models.GPUInstance) {
+	if inst.Source != models.SourceEC2 {
+		return
+	}
+	if inst.State != "stopped" {
+		return
+	}
+	if inst.UptimeHours < 168 { // 7 days since launch
+		return
+	}
+
+	// GPU instances typically have large root volumes (500GB+ for ML AMIs).
+	// Estimate EBS cost using gp3 pricing: $0.08/GB/mo.
+	estimatedEBSGB := 500.0
+	ebsMonthlyCost := estimatedEBSGB * 0.08 // $40/mo
+
+	days := int(inst.UptimeHours / 24)
+	inst.WasteSignals = append(inst.WasteSignals, models.WasteSignal{
+		Type:       "stopped_ebs",
+		Severity:   models.SeverityWarning,
+		Confidence: 0.8,
+		Evidence:   fmt.Sprintf("GPU instance stopped but still incurring EBS costs. Launched %d days ago. Estimated ~$%.0f/mo in storage.", days, ebsMonthlyCost),
+	})
+	inst.Recommendations = append(inst.Recommendations, models.Recommendation{
+		Action:                 models.ActionTerminate,
+		Description:            fmt.Sprintf("Instance stopped for %d+ days. Snapshot volumes and terminate to eliminate ~$%.0f/mo EBS cost, or restart if still needed.", days, ebsMonthlyCost),
+		CurrentMonthlyCost:     ebsMonthlyCost,
+		RecommendedMonthlyCost: 0,
+		MonthlySavings:         ebsMonthlyCost,
+		SavingsPercent:         100,
+		Risk:                   models.RiskLow,
 	})
 }
 

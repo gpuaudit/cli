@@ -96,6 +96,12 @@ func ec2InstanceToGPU(inst ec2types.Instance, accountID, region string) *models.
 	}
 	// TODO: detect RI/SP coverage via Cost Explorer
 
+	state := strings.ToLower(string(inst.State.Name))
+	hourlyCost := spec.OnDemandHourly
+	if state == "stopped" {
+		hourlyCost = 0
+	}
+
 	return &models.GPUInstance{
 		InstanceID:     aws.ToString(inst.InstanceId),
 		Source:         models.SourceEC2,
@@ -109,11 +115,11 @@ func ec2InstanceToGPU(inst ec2types.Instance, accountID, region string) *models.
 		GPUCount:     spec.GPUCount,
 		GPUVRAMGiB:   spec.GPUVRAMGiB,
 		TotalVRAMGiB: spec.TotalVRAMGiB,
-		State:        strings.ToLower(string(inst.State.Name)),
+		State:        state,
 		LaunchTime:   launchTime,
 		UptimeHours:  uptimeHours,
 		PricingModel: pricingModel,
-		HourlyCost:   spec.OnDemandHourly,
-		MonthlyCost:  spec.OnDemandHourly * 730,
+		HourlyCost:   hourlyCost,
+		MonthlyCost:  hourlyCost * 730,
 	}
 }
